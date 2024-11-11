@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 pyncclient = "*"
-pywin32y = "*"
 pyinstaller = "*"
 pywin32 = "*"
 winpath = "*"

@@ -221,7 +221,7 @@ def uploadUserSettings(
                 timestamp = dt.datetime.now().strftime("%Y%m%d%H%M%S")
                 zipfilename = os.path.join(
                     basepath,
-                    f"{serialnumber}_{current_machine_id}_{pre}_{timestamp}.zip",
+                    f"{serialnumber}_{current_machine_id}_UserSettings_{pre}_{timestamp}.zip",
                 )
                 zipObj = zipfile.ZipFile(zipfilename, "w")
                 zipObj.write(
