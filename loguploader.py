@@ -82,6 +82,22 @@ def _too_large(path):
         return False, 0.0
 
 
+def _is_http_409(exc: Exception) -> bool:
+    """Best-effort detection of HTTP 409 Conflict from nextcloud_client.
+
+    pyncclient exceptions vary by version; sometimes the status code is only
+    present in the string representation.
+    """
+    for attr in ("status_code", "code"):
+        try:
+            if getattr(exc, attr) == 409:
+                return True
+        except Exception:
+            pass
+    msg = str(exc)
+    return " 409" in msg or "HTTP 409" in msg or "409 Client Error" in msg
+
+
 def _drop_with_retries(nc, path):
     """Try nc.drop_file(path) with retries and backoff. Returns (ok, attempts, last_error)."""
     attempts = 0
@@ -92,6 +108,10 @@ def _drop_with_retries(nc, path):
             if nc.drop_file(path):
                 return True, attempts, None
         except Exception as e:
+            if _is_http_409(e):
+                # Nextcloud drop folder: 409 usually means the target name already exists.
+                # Treat as success to avoid retrying the same upload forever.
+                return True, attempts, "HTTP 409 (already exists)"
             last_error = f"{type(e).__name__}: {e}"
         if attempts < MAX_UPLOAD_ATTEMPTS:
             time.sleep(UPLOAD_BACKOFF_SECONDS)
@@ -155,7 +175,10 @@ def uploadlog(
 
             ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
             if ok:
-                returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
+                if last_error:
+                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts}, note={last_error})\n"
+                else:
+                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 try:
                     os.remove(logfilename)
                 except Exception:
@@ -235,7 +258,10 @@ def uploadLaserPowerLog(
 
             ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
             if ok:
-                returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
+                if last_error:
+                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts}, note={last_error})\n"
+                else:
+                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 try:
                     os.remove(logfilename)
                 except Exception:
@@ -307,7 +333,10 @@ def uploadSettings(
 
                 ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
                 if ok:
-                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
+                    if last_error:
+                        returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts}, note={last_error})\n"
+                    else:
+                        returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 else:
                     if last_error:
                         returntxt = (
@@ -371,7 +400,10 @@ def uploadUserSettings(
 
                 ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
                 if ok:
-                    returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
+                    if last_error:
+                        returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts}, note={last_error})\n"
+                    else:
+                        returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 else:
                     if last_error:
                         returntxt = (
