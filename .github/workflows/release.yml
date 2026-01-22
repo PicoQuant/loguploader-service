@@ -63,6 +63,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist\loguploaderservice.exe
-            Output\*.exe
+            dist/loguploaderservice.exe
+            Output/*.exe
           generate_release_notes: true
