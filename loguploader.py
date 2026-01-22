@@ -83,19 +83,19 @@ def _too_large(path):
 
 
 def _drop_with_retries(nc, path):
-    """Try nc.drop_file(path) with retries and backoff. Returns (ok, attempts)."""
+    """Try nc.drop_file(path) with retries and backoff. Returns (ok, attempts, last_error)."""
     attempts = 0
+    last_error = None
     while attempts < MAX_UPLOAD_ATTEMPTS:
         attempts += 1
         try:
             if nc.drop_file(path):
-                return True, attempts
-        except Exception:
-            # fall through to retry
-            pass
+                return True, attempts, None
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {e}"
         if attempts < MAX_UPLOAD_ATTEMPTS:
             time.sleep(UPLOAD_BACKOFF_SECONDS)
-    return False, attempts
+    return False, attempts, last_error
 
 
 def getLumiSerial(basepath):
@@ -153,7 +153,7 @@ def uploadlog(
                     pass
                 continue
 
-            ok, attempts = _drop_with_retries(nc, zipfilename)
+            ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
             if ok:
                 returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 try:
@@ -165,7 +165,13 @@ def uploadlog(
                 except Exception:
                     pass
             else:
-                returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
+                if last_error:
+                    returntxt = (
+                        returntxt
+                        + f"Upload Failed after {attempts} attempts: {zipfilename} ({last_error})\n"
+                    )
+                else:
+                    returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
                 try:
                     os.remove(zipfilename)
                 except Exception:
@@ -227,7 +233,7 @@ def uploadLaserPowerLog(
                     pass
                 continue
 
-            ok, attempts = _drop_with_retries(nc, zipfilename)
+            ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
             if ok:
                 returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 try:
@@ -239,7 +245,13 @@ def uploadLaserPowerLog(
                 except Exception:
                     pass
             else:
-                returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
+                if last_error:
+                    returntxt = (
+                        returntxt
+                        + f"Upload Failed after {attempts} attempts: {zipfilename} ({last_error})\n"
+                    )
+                else:
+                    returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
                 try:
                     os.remove(zipfilename)
                 except Exception:
@@ -293,11 +305,17 @@ def uploadSettings(
                         pass
                     continue
 
-                ok, attempts = _drop_with_retries(nc, zipfilename)
+                ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
                 if ok:
                     returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 else:
-                    returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
+                    if last_error:
+                        returntxt = (
+                            returntxt
+                            + f"Upload Failed after {attempts} attempts: {zipfilename} ({last_error})\n"
+                        )
+                    else:
+                        returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
                 try:
                     os.remove(zipfilename)
                 except Exception:
@@ -351,11 +369,17 @@ def uploadUserSettings(
                         pass
                     continue
 
-                ok, attempts = _drop_with_retries(nc, zipfilename)
+                ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
                 if ok:
                     returntxt = returntxt + f"Uploaded: {zipfilename} (attempts={attempts})\n"
                 else:
-                    returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
+                    if last_error:
+                        returntxt = (
+                            returntxt
+                            + f"Upload Failed after {attempts} attempts: {zipfilename} ({last_error})\n"
+                        )
+                    else:
+                        returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
                 try:
                     os.remove(zipfilename)
                 except Exception:

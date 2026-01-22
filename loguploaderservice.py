@@ -6,6 +6,7 @@ import loguploader
 import sys
 import win32timezone
 import settings
+import pywintypes
 
 
 class LumiLogUploadService:
@@ -97,8 +98,23 @@ def init():
     if len(sys.argv) == 1:
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(LumiLogUploadServiceFramework)
-        servicemanager.StartServiceCtrlDispatcher()
-        servicemanager.LogInfoMsg("Loguploader Service started")
+        try:
+            servicemanager.StartServiceCtrlDispatcher()
+            servicemanager.LogInfoMsg("Loguploader Service started")
+        except pywintypes.error as e:
+            # (1063, 'StartServiceCtrlDispatcher', ...) happens when started from console
+            # instead of by the Windows Service Control Manager.
+            if e.args and e.args[0] == 1063:
+                sys.stderr.write(
+                    "This executable is a Windows Service and must be started by the Service Control Manager.\n"
+                    "Use one of these (as Administrator):\n"
+                    "  loguploaderservice.exe install\n"
+                    "  loguploaderservice.exe start\n"
+                    "Or for console debug:\n"
+                    "  loguploaderservice.exe debug\n"
+                )
+                return
+            raise
     else:
         win32serviceutil.HandleCommandLine(LumiLogUploadServiceFramework)
 
