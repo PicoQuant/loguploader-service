@@ -63,4 +63,5 @@ jobs:
           name: windows-artifacts
           path: |
             dist\\loguploaderservice.exe
+            Output\\*.exe
             *.exe
