@@ -1,0 +1,9 @@
+public_link = "link"
+
+# Upload control
+max_upload_size_mb = 200         # Skip ZIPs larger than this size (in MB)
+max_upload_attempts = 3          # Number of retry attempts for each upload
+upload_backoff_seconds = 2       # Seconds to wait between retries
+
+# Service loop interval (seconds)
+service_interval_seconds = 300
