@@ -1,0 +1,68 @@
+name: Release (Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Create settings.py from secrets (optional)
+        shell: pwsh
+        env:
+          PUBLIC_LINK: ${{ secrets.PUBLIC_LINK }}
+        run: |
+          if ($env:PUBLIC_LINK) {
+            "public_link = `"$env:PUBLIC_LINK`"" | Out-File -FilePath "settings.py" -Encoding utf8 -NoNewline
+          } else {
+            Write-Host "No PUBLIC_LINK secret set; building without embedded settings.py"
+          }
+
+      - name: Generate derived version files
+        run: python tools/gen_build_versions.py
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build EXE (PyInstaller)
+        run: |
+          python -m PyInstaller --onefile --hidden-import win32timezone --version-file version_info.txt .\loguploaderservice.py
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
+          if (!(Test-Path $iscc)) {
+            throw "ISCC.exe not found after innosetup install"
+          }
+          & $iscc ".\LogUploaderService_Setup_script.iss"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist\loguploaderservice.exe
+            Output\*.exe
+          generate_release_notes: true
