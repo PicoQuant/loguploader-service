@@ -6,9 +6,31 @@ dropbox.py
 *.exe
 *.pqlog
 *.pic
-_pycache_/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 JennyDB.xml
 temp*
 serial.txt
 *.spec
 settings.py
+
+# file change markers created by has_file_changed()
+*.lastcheck
+
+# optional: local virtual envs
+.venv/
+venv/
+.python-version
+
+# optional: editor settings
+.vscode/
+.idea/
+
+# PyInstaller temp runtime dirs (prevent _MEI* from being tracked)
+_MEI*/
+
+# optional: generated XML copies (uncomment if you don't want them in git)
+# *.db.xml
+# *.conf.xml

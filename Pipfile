@@ -4,11 +4,21 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-pyncclient = "*"
-pywin32y = "*"
-pyinstaller = "*"
-pywin32 = "*"
-winpath = "*"
+pyncclient = "==0.7"
+pyinstaller = "==6.9.0"
+pywin32 = "==306"
+winpath = "==202002.2"
+altgraph = "==0.17.4"
+certifi = "==2024.7.4"
+charset-normalizer = "==3.3.2"
+idna = "==3.7"
+packaging = "==24.1"
+pefile = "==2023.2.7"
+pyinstaller-hooks-contrib = "==2024.7"
+pywin32-ctypes = "==0.2.2"
+requests = "==2.32.3"
+six = "==1.16.0"
+urllib3 = "==2.2.2"
 
 [dev-packages]
 
