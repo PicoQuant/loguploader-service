@@ -3,7 +3,7 @@
 
 
 ```
-git clone https://github.com/snizzleorg/loguploader-service.git
+git clone https://github.com/PicoQuant/loguploader-service.git
 cd loguploader-service
 pip install -r requirements.txt
 ```
