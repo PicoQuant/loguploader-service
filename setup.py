@@ -9,6 +9,6 @@ bdist_msi_options = {
     }
 
 setup(name = "LumiLogUploaderService" ,
-      version = "0.1" ,
+      version = "0.1.1" ,
       description = "Luminosa Log File Uploader Service" ,
       executables = [Executable("loguploaderservice.py")])
