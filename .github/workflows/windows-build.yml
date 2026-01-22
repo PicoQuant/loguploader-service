@@ -19,6 +19,17 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Create settings.py from secrets (optional)
+        shell: pwsh
+        env:
+          PUBLIC_LINK: ${{ secrets.PUBLIC_LINK }}
+        run: |
+          if ($env:PUBLIC_LINK) {
+            "public_link = `"$env:PUBLIC_LINK`"" | Out-File -FilePath "settings.py" -Encoding utf8 -NoNewline
+          } else {
+            Write-Host "No PUBLIC_LINK secret set; building without embedded settings.py"
+          }
+
       - name: Generate derived version files
         run: python tools/gen_build_versions.py
 
