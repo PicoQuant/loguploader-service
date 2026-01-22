@@ -1,5 +1,10 @@
 from cx_Freeze import setup, Executable
 
+
+def _read_version() -> str:
+    with open("VERSION", "r", encoding="utf-8") as f:
+        return f.read().strip()
+
 bdist_msi_options = {
     #'upgrade_code': '{66620F3A-DC3A-11E2-B341-002219E9B01E}',
     'add_to_path': False,
@@ -9,6 +14,6 @@ bdist_msi_options = {
     }
 
 setup(name = "LumiLogUploaderService" ,
-      version = "0.11" ,
+      version = _read_version() ,
       description = "Luminosa Log File Uploader Service" ,
       executables = [Executable("loguploaderservice.py")])

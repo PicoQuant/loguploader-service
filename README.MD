@@ -14,6 +14,16 @@ public_link = "https://nc.example.com/index.php/s/<share-token>"
 
 You can start from `settings.py.example`.
 
+## Versioning
+
+The version is stored in the `VERSION` file (single source of truth).
+
+Before building the Windows EXE / installer, generate the derived version files:
+
+```
+python tools/gen_build_versions.py
+```
+
 ## Nextcloud upload
 
 The service primarily uses the `pyncclient` (`nextcloud_client`) library. If the Nextcloud server rejects uploads via the legacy public share endpoint after an update, the uploader falls back to using:
