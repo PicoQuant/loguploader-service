@@ -12,6 +12,9 @@ import shutil
 import datetime
 import winreg
 import time
+from urllib.parse import urlparse
+
+import requests
 
 
 def has_file_changed(file_path):
@@ -98,6 +101,36 @@ def _is_http_409(exc: Exception) -> bool:
     return " 409" in msg or "HTTP 409" in msg or "409 Client Error" in msg
 
 
+def _public_share_token_from_link(link: str) -> str:
+    path = urlparse(link).path
+    parts = [p for p in path.split("/") if p]
+    for i, p in enumerate(parts):
+        if p == "s" and i + 1 < len(parts):
+            return parts[i + 1]
+    raise ValueError("Could not extract share token from public_link")
+
+
+def _public_share_base_url_from_link(link: str) -> str:
+    u = urlparse(link)
+    return f"{u.scheme}://{u.netloc}"
+
+
+def _public_dav_put_file(local_path: str, remote_name: str) -> None:
+    token = _public_share_token_from_link(settings.public_link)
+    base = _public_share_base_url_from_link(settings.public_link)
+    url = f"{base}/public.php/dav/files/{token}/{remote_name}"
+    with open(local_path, "rb") as f:
+        r = requests.put(
+            url,
+            data=f,
+            auth=(token, ""),
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=60,
+        )
+    if r.status_code not in (200, 201, 204):
+        raise RuntimeError(f"public DAV upload failed: HTTP {r.status_code} {r.text}")
+
+
 def _drop_with_retries(nc, path):
     """Try nc.drop_file(path) with retries and backoff. Returns (ok, attempts, last_error)."""
     attempts = 0
@@ -105,13 +138,18 @@ def _drop_with_retries(nc, path):
     while attempts < MAX_UPLOAD_ATTEMPTS:
         attempts += 1
         try:
-            if nc.drop_file(path):
-                return True, attempts, None
+            ok = False
+            try:
+                ok = bool(nc.drop_file(path))
+            except Exception:
+                ok = False
+
+            if not ok:
+                _public_dav_put_file(path, os.path.basename(path))
+                return True, attempts, "pyncclient failed; uploaded via public.php/dav"
+
+            return True, attempts, None
         except Exception as e:
-            if _is_http_409(e):
-                # Nextcloud drop folder: 409 usually means the target name already exists.
-                # Treat as success to avoid retrying the same upload forever.
-                return True, attempts, "HTTP 409 (already exists)"
             last_error = f"{type(e).__name__}: {e}"
         if attempts < MAX_UPLOAD_ATTEMPTS:
             time.sleep(UPLOAD_BACKOFF_SECONDS)

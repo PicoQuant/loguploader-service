@@ -1,16 +1,16 @@
-altgraph==0.17.4
-certifi==2024.7.4
-charset-normalizer==3.3.2
-idna==3.7
-packaging==24.1
-pefile==2023.2.7; sys_platform == "win32"
-pyinstaller==6.9.0
-pyinstaller-hooks-contrib==2024.7
-pyncclient==0.7
-pywin32==306; sys_platform == "win32"
-pywin32-ctypes==0.2.2; sys_platform == "win32"
-requests==2.32.3
-setuptools==70.3.0
-six==1.16.0
-urllib3==2.2.2
-winpath==202002.2
+altgraph
+certifi
+charset-normalizer
+idna
+packaging
+pefile
+pyinstaller
+pyinstaller-hooks-contrib
+pyncclient
+pywin32
+pywin32-ctypes
+requests
+setuptools
+six
+urllib3
+winpath
