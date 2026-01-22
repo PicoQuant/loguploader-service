@@ -4,7 +4,12 @@ import os
 import zipfile
 from os.path import basename
 from argparse import ArgumentParser
-import settings
+try:
+    import settings  # type: ignore
+except Exception:
+    from types import SimpleNamespace
+
+    settings = SimpleNamespace()
 import winpath
 import sys
 import subprocess
@@ -115,9 +120,19 @@ def _public_share_base_url_from_link(link: str) -> str:
     return f"{u.scheme}://{u.netloc}"
 
 
+def _get_public_link() -> str:
+    link = getattr(settings, "public_link", None) or os.environ.get("PUBLIC_LINK")
+    if not link:
+        raise RuntimeError(
+            "Missing Nextcloud public link. Provide settings.public_link in settings.py or set PUBLIC_LINK env var."
+        )
+    return link
+
+
 def _public_dav_put_file(local_path: str, remote_name: str) -> None:
-    token = _public_share_token_from_link(settings.public_link)
-    base = _public_share_base_url_from_link(settings.public_link)
+    public_link = _get_public_link()
+    token = _public_share_token_from_link(public_link)
+    base = _public_share_base_url_from_link(public_link)
     url = f"{base}/public.php/dav/files/{token}/{remote_name}"
     with open(local_path, "rb") as f:
         r = requests.put(
@@ -178,7 +193,7 @@ def uploadlog(
     basepath = os.path.join(basepath, "Logs")
 
     returntxt = f"LogDir: {basepath}\n"
-    nc = nextcloud_client.Client.from_public_link(settings.public_link)
+    nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "*.pqlog")
         logfiles = glob.glob(filepattern)
@@ -252,7 +267,7 @@ def uploadLaserPowerLog(
         basepath = os.path.dirname(os.path.realpath(__file__))
 
     returntxt = f"LaserPower.log Dir: {basepath}\n"
-    nc = nextcloud_client.Client.from_public_link(settings.public_link)
+    nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "LaserPower.log")
         logfiles = glob.glob(filepattern)
@@ -337,7 +352,7 @@ def uploadSettings(
     basepath = os.path.join(basepath, "")
     returntxt = f"SettingsDir: {basepath}\n"
 
-    nc = nextcloud_client.Client.from_public_link(settings.public_link)
+    nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "*.xml")
         settingsFiles = glob.glob(filepattern)
@@ -404,7 +419,7 @@ def uploadUserSettings(
     basepath = os.path.join(basepath, "UserSettings")
 
     returntxt = f"UserSettingsDir: {basepath}\n"
-    nc = nextcloud_client.Client.from_public_link(settings.public_link)
+    nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "*.xml")
         settingsFiles = glob.glob(filepattern)

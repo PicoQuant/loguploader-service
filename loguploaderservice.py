@@ -5,7 +5,12 @@ import servicemanager  # Simple setup and logging
 import loguploader
 import sys
 import win32timezone
-import settings
+try:
+    import settings  # type: ignore
+except Exception:
+    from types import SimpleNamespace
+
+    settings = SimpleNamespace()
 import pywintypes
 
 
