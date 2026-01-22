@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Luminosa Log Uploader"
-#define MyAppVersion "0.10"
+#define MyAppVersion "0.11"
 #define MyAppPublisher "PicoQuant Support"
 #define MyAppURL "https://support.picoquant.com"
 #define MyAppExeName "loguploaderservice.exe"
