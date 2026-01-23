@@ -11,6 +11,11 @@ $LocalVersionPath = Join-Path $InstallRoot 'VERSION'
 $TempDir = Join-Path $env:ProgramData 'PicoQuant\LuminosaLogUploader\update'
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
+$LogPath = Join-Path $TempDir 'update.log'
+"[{0}] updater starting" -f (Get-Date -Format o) | Add-Content -Path $LogPath
+
+try {
+
 function Get-VersionFromTag($tag) {
   if (!$tag) { return $null }
   if ($tag.StartsWith('v')) { return $tag.Substring(1) }
@@ -42,6 +47,7 @@ $remoteVersion = Get-VersionFromTag $tag
 if (!$remoteVersion) { exit 0 }
 
 if ($localVersion -and (Compare-SemVer $localVersion $remoteVersion) -ge 0) {
+  "[{0}] already up to date (local={1}, remote={2})" -f (Get-Date -Format o), $localVersion, $remoteVersion | Add-Content -Path $LogPath
   exit 0
 }
 
@@ -64,16 +70,22 @@ $shaPath = Join-Path $TempDir $shaAsset.name
 Invoke-WebRequest -Uri $installerAsset.browser_download_url -Headers $headers -OutFile $installerPath
 Invoke-WebRequest -Uri $shaAsset.browser_download_url -Headers $headers -OutFile $shaPath
 
+"[{0}] downloaded installer={1} sha={2}" -f (Get-Date -Format o), $installerPath, $shaPath | Add-Content -Path $LogPath
+
 $expectedHash = (Get-Content $shaPath -Raw).Trim().Split(' ')[0]
 $actualHash = (Get-FileHash -Path $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($expectedHash.ToLowerInvariant() -ne $actualHash) {
   throw "SHA256 mismatch for installer. expected=$expectedHash actual=$actualHash"
 }
 
+"[{0}] sha256 ok" -f (Get-Date -Format o) | Add-Content -Path $LogPath
+
 $exe = Join-Path $InstallRoot 'loguploaderservice.exe'
 if (Test-Path $exe) {
   try { & $exe stop | Out-Null } catch {}
 }
+
+"[{0}] running installer silently" -f (Get-Date -Format o) | Add-Content -Path $LogPath
 
 $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
 $proc = Start-Process -FilePath $installerPath -ArgumentList $arguments -PassThru -Wait
@@ -81,6 +93,14 @@ if ($proc.ExitCode -ne 0) {
   throw "Installer failed with exit code $($proc.ExitCode)"
 }
 
+"[{0}] install ok" -f (Get-Date -Format o) | Add-Content -Path $LogPath
+
 if (Test-Path $exe) {
   try { & $exe start | Out-Null } catch {}
+}
+
+"[{0}] updater finished" -f (Get-Date -Format o) | Add-Content -Path $LogPath
+} catch {
+  "[{0}] updater error: {1}" -f (Get-Date -Format o), $_ | Add-Content -Path $LogPath
+  throw
 }
