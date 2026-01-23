@@ -76,8 +76,8 @@ var
   Params: string;
   Started: Boolean;
 begin
-  TaskName := '\\PicoQuant\\LuminosaLogUploader\\AutoUpdate';
-  Tr := 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\\updater\\update.ps1') + '"';
+  TaskName := '\PicoQuant\LuminosaLogUploader\AutoUpdate';
+  Tr := '\"powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"' + ExpandConstant('{app}\updater\update.ps1') + '\"';
   Params := '/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN "' + TaskName + '" /TR "' + Tr + '"';
 
   WriteTaskLog('Creating task: ' + Params);
@@ -93,7 +93,7 @@ var
   TaskName: string;
   Params: string;
 begin
-  TaskName := '\\PicoQuant\\LuminosaLogUploader\\AutoUpdate';
+  TaskName := '\PicoQuant\LuminosaLogUploader\AutoUpdate';
   Params := '/Delete /F /TN "' + TaskName + '"';
   Result := Exec(ExpandConstant('{sys}\\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := Result and (ResultCode = 0);
