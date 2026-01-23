@@ -18,6 +18,8 @@ import datetime
 import winreg
 import time
 from urllib.parse import urlparse
+import json
+import platform
 
 import requests
 
@@ -118,6 +120,115 @@ def _public_share_token_from_link(link: str) -> str:
 def _public_share_base_url_from_link(link: str) -> str:
     u = urlparse(link)
     return f"{u.scheme}://{u.netloc}"
+
+
+def _get_install_root() -> str:
+    # When frozen (PyInstaller), sys.executable points to the installed exe.
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.realpath(__file__))
+
+
+def _get_app_version() -> str:
+    try:
+        version_path = os.path.join(_get_install_root(), "VERSION")
+        with open(version_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
+
+
+def _client_version_state_dir() -> str:
+    base = os.getenv("PROGRAMDATA") or os.path.expanduser("~")
+    path = os.path.join(base, "PicoQuant", "LuminosaLogUploader")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _client_version_marker_path() -> str:
+    return os.path.join(_client_version_state_dir(), "client_version_last_upload.txt")
+
+
+def _should_upload_client_version_today(day_yyyymmdd: str) -> bool:
+    marker = _client_version_marker_path()
+    try:
+        with open(marker, "r", encoding="utf-8") as f:
+            last = f.read().strip()
+        return last != day_yyyymmdd
+    except Exception:
+        return True
+
+
+def _mark_client_version_uploaded(day_yyyymmdd: str) -> None:
+    marker = _client_version_marker_path()
+    with open(marker, "w", encoding="utf-8") as f:
+        f.write(day_yyyymmdd)
+
+
+def _build_client_version_payload(serialnumber: str, current_machine_id: str) -> dict:
+    now_utc = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    payload = {
+        "app": {
+            "name": "loguploader-service",
+            "version": _get_app_version(),
+        },
+        "device": {
+            "serial_number": serialnumber,
+            "machine_id": current_machine_id,
+        },
+        "os": {
+            "platform": "Windows" if sys.platform == "win32" else sys.platform,
+            "version": platform.version(),
+            "release": platform.release(),
+            "architecture": platform.machine(),
+        },
+        "timestamp_utc": now_utc,
+    }
+    if sys.platform == "win32":
+        try:
+            wv = sys.getwindowsversion()
+            payload["os"]["windows_build"] = str(getattr(wv, "build", ""))
+        except Exception:
+            pass
+    return payload
+
+
+def did_any_upload_succeed(returntxt: str) -> bool:
+    # Upload functions append lines like "Uploaded: <file>" on success.
+    return "Uploaded:" in (returntxt or "")
+
+
+def upload_client_version_if_needed(
+    serialnumber: str,
+    current_machine_id: str,
+) -> str:
+    day = datetime.datetime.utcnow().strftime("%Y%m%d")
+    if not _should_upload_client_version_today(day):
+        return "client_version: already uploaded today\n"
+
+    payload = _build_client_version_payload(serialnumber, current_machine_id)
+    remote_name = f"{serialnumber}_{current_machine_id}_client_version_{day}.json"
+
+    local_path = os.path.join(_client_version_state_dir(), remote_name)
+    try:
+        with open(local_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+    except Exception as e:
+        return f"client_version: failed to write json ({type(e).__name__}: {e})\n"
+
+    try:
+        # Use direct public DAV upload (same drop folder)
+        _public_dav_put_file(local_path, remote_name)
+        _mark_client_version_uploaded(day)
+        return f"client_version: uploaded {remote_name}\n"
+    except Exception as e:
+        return f"client_version: upload failed ({type(e).__name__}: {e})\n"
+    finally:
+        try:
+            os.remove(local_path)
+        except Exception:
+            pass
 
 
 def _get_public_link() -> str:

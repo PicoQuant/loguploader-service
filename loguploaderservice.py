@@ -42,6 +42,7 @@ class LumiLogUploadService:
                     current_machine_id=currentMachineID,
                 )
                 servicemanager.LogInfoMsg(rtn)
+                any_uploaded = loguploader.did_any_upload_succeed(rtn)
 
                 rtn = loguploader.uploadUserSettings(
                     basepath=defaultDir,
@@ -49,6 +50,7 @@ class LumiLogUploadService:
                     current_machine_id=currentMachineID,
                 )
                 servicemanager.LogInfoMsg(rtn)
+                any_uploaded = any_uploaded or loguploader.did_any_upload_succeed(rtn)
 
                 rtn = loguploader.uploadLaserPowerLog(
                     basepath=defaultDir,
@@ -56,6 +58,7 @@ class LumiLogUploadService:
                     current_machine_id=currentMachineID,
                 )
                 servicemanager.LogInfoMsg(rtn)
+                any_uploaded = any_uploaded or loguploader.did_any_upload_succeed(rtn)
 
                 rtn = loguploader.uploadlog(
                     basepath=defaultDir,
@@ -63,6 +66,14 @@ class LumiLogUploadService:
                     current_machine_id=currentMachineID,
                 )
                 servicemanager.LogInfoMsg(rtn)
+                any_uploaded = any_uploaded or loguploader.did_any_upload_succeed(rtn)
+
+                if any_uploaded:
+                    rtn = loguploader.upload_client_version_if_needed(
+                        serialnumber=serialnumber,
+                        current_machine_id=currentMachineID,
+                    )
+                    servicemanager.LogInfoMsg(rtn)
             except Exception as e:
                 # Never crash the service loop; log and continue next cycle
                 try:
