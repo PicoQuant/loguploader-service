@@ -1,1 +1,1 @@
-#define MyAppVersion "0.11.5"
+#define MyAppVersion "0.11.6"
