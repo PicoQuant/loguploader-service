@@ -33,6 +33,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "VERSION"; DestDir: "{app}"; Flags: ignoreversion
+Source: "updater\update.ps1"; DestDir: "{app}\updater"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
@@ -41,8 +43,10 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--startup delayed install"; Flags: skipifsilent runascurrentuser runhidden
 Filename: "{app}\{#MyAppExeName}"; Parameters: "start"; Flags: skipifsilent runascurrentuser runhidden
+Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /TN \"PicoQuant\\LuminosaLogUploader\\AutoUpdate\" /TR \"powershell.exe -NoProfile -ExecutionPolicy Bypass -File '{app}\\updater\\update.ps1'\""; Flags: runhidden
 [UninstallRun]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "stop"; Flags: runhidden
-Filename: "{app}\{#MyAppExeName}"; Parameters: "remove"; Flags: runhidden
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN \"PicoQuant\\LuminosaLogUploader\\AutoUpdate\""; Flags: runhidden
+Filename: "{app}\{#MyAppExeName}"; Parameters: "stop"; Flags: runhidden; RunOnceId: "StopService"
+Filename: "{app}\{#MyAppExeName}"; Parameters: "remove"; Flags: runhidden; RunOnceId: "RemoveService"
 
 

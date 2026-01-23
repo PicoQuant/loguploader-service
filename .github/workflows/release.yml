@@ -59,10 +59,19 @@ jobs:
           }
           & $iscc ".\LogUploaderService_Setup_script.iss"
 
+      - name: Generate SHA256 for installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path "Output" -Filter "*.exe" | Select-Object -First 1
+          if (!$installer) { throw "Installer not found in Output/" }
+          $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Out-File -FilePath ("$($installer.FullName).sha256") -Encoding ascii -NoNewline
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/loguploaderservice.exe
             Output/*.exe
+            Output/*.sha256
           generate_release_notes: true
