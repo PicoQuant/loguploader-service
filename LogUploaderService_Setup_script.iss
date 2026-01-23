@@ -21,6 +21,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+PrivilegesRequired=admin
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputBaseFilename=Luminosa Log Uploader Setup
@@ -73,16 +74,17 @@ var
   TaskName: string;
   Tr: string;
   Params: string;
+  Started: Boolean;
 begin
   TaskName := '\\PicoQuant\\LuminosaLogUploader\\AutoUpdate';
-  Tr := 'cmd.exe /c ""powershell.exe -NoProfile -ExecutionPolicy Bypass -File """"' + ExpandConstant('{app}\\updater\\update.ps1') + '"""" >> """"' + ExpandConstant('{commonappdata}\\PicoQuant\\LuminosaLogUploader\\update\\update.log') + '"""" 2>&1""';
+  Tr := 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\\updater\\update.ps1') + '"';
   Params := '/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN "' + TaskName + '" /TR "' + Tr + '"';
 
   WriteTaskLog('Creating task: ' + Params);
-  Result := Exec(ExpandConstant('{sys}\\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  WriteTaskLog('schtasks /Create exit=' + IntToStr(ResultCode));
+  Started := Exec(ExpandConstant('{sys}\\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  WriteTaskLog('schtasks started=' + IntToStr(Ord(Started)) + ' exit=' + IntToStr(ResultCode));
 
-  Result := Result and (ResultCode = 0);
+  Result := Started and (ResultCode = 0);
 end;
 
 function DeleteAutoUpdateTask(): Boolean;
