@@ -43,10 +43,70 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--startup delayed install"; Flags: skipifsilent runascurrentuser runhidden
 Filename: "{app}\{#MyAppExeName}"; Parameters: "start"; Flags: skipifsilent runascurrentuser runhidden
-Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN ""PicoQuant\LuminosaLogUploader\AutoUpdate"" /TR ""cmd.exe /c ""powershell.exe -NoProfile -ExecutionPolicy Bypass -File """"{app}\updater\update.ps1"""" >> """"{commonappdata}\PicoQuant\LuminosaLogUploader\update\update.log"""" 2>&1"""""""; Flags: runhidden
 [UninstallRun]
-Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""PicoQuant\LuminosaLogUploader\AutoUpdate"""; Flags: runhidden
 Filename: "{app}\{#MyAppExeName}"; Parameters: "stop"; Flags: runhidden; RunOnceId: "StopService"
 Filename: "{app}\{#MyAppExeName}"; Parameters: "remove"; Flags: runhidden; RunOnceId: "RemoveService"
+
+[Code]
+function EnsureDir(const Dir: string): Boolean;
+begin
+  if DirExists(Dir) then
+    Result := True
+  else
+    Result := ForceDirectories(Dir);
+end;
+
+procedure WriteTaskLog(const S: string);
+var
+  LogDir: string;
+  LogPath: string;
+begin
+  LogDir := ExpandConstant('{commonappdata}\\PicoQuant\\LuminosaLogUploader\\update');
+  EnsureDir(LogDir);
+  LogPath := LogDir + '\\installer_task.log';
+  SaveStringToFile(LogPath, S + #13#10, True);
+end;
+
+function CreateAutoUpdateTask(): Boolean;
+var
+  ResultCode: Integer;
+  TaskName: string;
+  Tr: string;
+  Params: string;
+begin
+  TaskName := '\\PicoQuant\\LuminosaLogUploader\\AutoUpdate';
+  Tr := 'cmd.exe /c ""powershell.exe -NoProfile -ExecutionPolicy Bypass -File """"' + ExpandConstant('{app}\\updater\\update.ps1') + '"""" >> """"' + ExpandConstant('{commonappdata}\\PicoQuant\\LuminosaLogUploader\\update\\update.log') + '"""" 2>&1""';
+  Params := '/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN "' + TaskName + '" /TR "' + Tr + '"';
+
+  WriteTaskLog('Creating task: ' + Params);
+  Result := Exec(ExpandConstant('{sys}\\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  WriteTaskLog('schtasks /Create exit=' + IntToStr(ResultCode));
+
+  Result := Result and (ResultCode = 0);
+end;
+
+function DeleteAutoUpdateTask(): Boolean;
+var
+  ResultCode: Integer;
+  TaskName: string;
+  Params: string;
+begin
+  TaskName := '\\PicoQuant\\LuminosaLogUploader\\AutoUpdate';
+  Params := '/Delete /F /TN "' + TaskName + '"';
+  Result := Exec(ExpandConstant('{sys}\\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := Result and (ResultCode = 0);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    CreateAutoUpdateTask();
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    DeleteAutoUpdateTask();
+end;
 
 
