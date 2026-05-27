@@ -82,6 +82,38 @@ def _get_setting(name, default):
 MAX_UPLOAD_SIZE_MB = _get_setting("max_upload_size_mb", 200)  # conservative default
 MAX_UPLOAD_ATTEMPTS = _get_setting("max_upload_attempts", 3)
 UPLOAD_BACKOFF_SECONDS = _get_setting("upload_backoff_seconds", 2)
+KEEP_LOCAL_ZIP_DAYS = _get_setting("keep_local_zip_days", 30)
+
+
+def _cleanup_old_files(folder: str, pattern: str, keep_days: int) -> int:
+    """Delete files matching pattern in folder that are older than keep_days.
+
+    Returns number of deleted files.
+    """
+    if keep_days is None or int(keep_days) <= 0:
+        return 0
+    try:
+        if not os.path.isdir(folder):
+            return 0
+        cutoff = time.time() - (int(keep_days) * 24 * 60 * 60)
+        deleted = 0
+        for path in glob.glob(os.path.join(folder, pattern)):
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    deleted += 1
+            except Exception:
+                pass
+        return deleted
+    except Exception:
+        return 0
+
+
+def _should_keep_local_zips() -> bool:
+    try:
+        return int(KEEP_LOCAL_ZIP_DAYS) > 0
+    except Exception:
+        return False
 
 
 def _too_large(path):
@@ -304,6 +336,13 @@ def uploadlog(
     basepath = os.path.join(basepath, "Logs")
 
     returntxt = f"LogDir: {basepath}\n"
+    try:
+        os.makedirs(basepath, exist_ok=True)
+    except Exception:
+        pass
+    deleted = _cleanup_old_files(basepath, "*.zip", KEEP_LOCAL_ZIP_DAYS)
+    if deleted:
+        returntxt += f"Cleanup: deleted {deleted} zip(s) older than {KEEP_LOCAL_ZIP_DAYS} days\n"
     nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "*.pqlog")
@@ -331,10 +370,6 @@ def uploadlog(
                 returntxt += (
                     f"Skipped (too large {size_mb:.1f} MB > {MAX_UPLOAD_SIZE_MB} MB): {zipfilename}\n"
                 )
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
                 continue
 
             ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
@@ -347,10 +382,11 @@ def uploadlog(
                     os.remove(logfilename)
                 except Exception:
                     pass
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
             else:
                 if last_error:
                     returntxt = (
@@ -359,10 +395,11 @@ def uploadlog(
                     )
                 else:
                     returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
     else:
         returntxt = returntxt + f"Connection failed"
     return returntxt
@@ -378,6 +415,13 @@ def uploadLaserPowerLog(
         basepath = os.path.dirname(os.path.realpath(__file__))
 
     returntxt = f"LaserPower.log Dir: {basepath}\n"
+    try:
+        os.makedirs(basepath, exist_ok=True)
+    except Exception:
+        pass
+    deleted = _cleanup_old_files(basepath, "*.zip", KEEP_LOCAL_ZIP_DAYS)
+    if deleted:
+        returntxt += f"Cleanup: deleted {deleted} zip(s) older than {KEEP_LOCAL_ZIP_DAYS} days\n"
     nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "LaserPower.log")
@@ -414,10 +458,6 @@ def uploadLaserPowerLog(
                 returntxt += (
                     f"Skipped (too large {size_mb:.1f} MB > {MAX_UPLOAD_SIZE_MB} MB): {zipfilename}\n"
                 )
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
                 continue
 
             ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
@@ -430,10 +470,11 @@ def uploadLaserPowerLog(
                     os.remove(logfilename)
                 except Exception:
                     pass
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
             else:
                 if last_error:
                     returntxt = (
@@ -442,10 +483,11 @@ def uploadLaserPowerLog(
                     )
                 else:
                     returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
     else:
         returntxt = returntxt + f"Connection failed"
     return returntxt
@@ -462,6 +504,10 @@ def uploadSettings(
         basepath = os.path.dirname(os.path.realpath(__file__))
     basepath = os.path.join(basepath, "")
     returntxt = f"SettingsDir: {basepath}\n"
+
+    deleted = _cleanup_old_files(basepath, "*.zip", KEEP_LOCAL_ZIP_DAYS)
+    if deleted:
+        returntxt += f"Cleanup: deleted {deleted} zip(s) older than {KEEP_LOCAL_ZIP_DAYS} days\n"
 
     nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
@@ -489,10 +535,6 @@ def uploadSettings(
                     returntxt += (
                         f"Skipped (too large {size_mb:.1f} MB > {MAX_UPLOAD_SIZE_MB} MB): {zipfilename}\n"
                     )
-                    try:
-                        os.remove(zipfilename)
-                    except Exception:
-                        pass
                     continue
 
                 ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
@@ -509,10 +551,11 @@ def uploadSettings(
                         )
                     else:
                         returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
     else:
         returntxt = returntxt + f"Connection failed"
     return returntxt
@@ -530,6 +573,13 @@ def uploadUserSettings(
     basepath = os.path.join(basepath, "UserSettings")
 
     returntxt = f"UserSettingsDir: {basepath}\n"
+    try:
+        os.makedirs(basepath, exist_ok=True)
+    except Exception:
+        pass
+    deleted = _cleanup_old_files(basepath, "*.zip", KEEP_LOCAL_ZIP_DAYS)
+    if deleted:
+        returntxt += f"Cleanup: deleted {deleted} zip(s) older than {KEEP_LOCAL_ZIP_DAYS} days\n"
     nc = nextcloud_client.Client.from_public_link(_get_public_link())
     if nc:
         filepattern = os.path.join(basepath, "*.xml")
@@ -556,10 +606,6 @@ def uploadUserSettings(
                     returntxt += (
                         f"Skipped (too large {size_mb:.1f} MB > {MAX_UPLOAD_SIZE_MB} MB): {zipfilename}\n"
                     )
-                    try:
-                        os.remove(zipfilename)
-                    except Exception:
-                        pass
                     continue
 
                 ok, attempts, last_error = _drop_with_retries(nc, zipfilename)
@@ -576,10 +622,11 @@ def uploadUserSettings(
                         )
                     else:
                         returntxt = returntxt + f"Upload Failed after {attempts} attempts: {zipfilename}\n"
-                try:
-                    os.remove(zipfilename)
-                except Exception:
-                    pass
+                if not _should_keep_local_zips():
+                    try:
+                        os.remove(zipfilename)
+                    except Exception:
+                        pass
     else:
         returntxt = returntxt + f"Connection failed"
     return returntxt
