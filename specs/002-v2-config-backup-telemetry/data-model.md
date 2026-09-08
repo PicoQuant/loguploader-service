@@ -40,6 +40,11 @@ The set for a product, from `product.rs` (FR-008). Each entry:
 | `settings/<name>.xml` | DataDir | `*.xml` (glob; `file_key` = `settings/` + filename) |
 | `usersettings/<name>.xml` | DataDir | `UserSettings\*.xml` (glob; `file_key` = `usersettings/` + filename) |
 
+The backend accepts `file_key` only in `[a-z0-9_./-]` (spec 003). The real on-disk
+filename (`ChromophoreList.xml`, `GUI Settings.xml`, …) is therefore normalised for the
+`file_key` — ASCII-lowercased, any other character → `-` — by `watchset::sanitize_key_component`.
+The untouched name still travels in the `source_path` part.
+
 Explicitly excluded: `Logs\*.pqlog`, `LaserPower.log` (FR-001).
 
 ## ResolvedWatchedFile (per cycle, in-memory)

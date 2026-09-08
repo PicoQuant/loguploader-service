@@ -95,10 +95,29 @@ fn expand_glob(spec: &WatchedFileSpec, root: &Path) -> Vec<(String, PathBuf)> {
             Some(n) => n.to_string(),
             None => continue,
         };
-        matches.push((format!("{}{}", spec.file_key, filename), path));
+        // file_key charset the backend accepts is `[a-z0-9_./-]` (spec 003) — the real
+        // filename (CamelCase, spaces, …) is normalised here; the untouched name still
+        // travels in `source_path`.
+        let key = format!("{}{}", spec.file_key, sanitize_key_component(&filename));
+        matches.push((key, path));
     }
     matches.sort_by(|a, b| a.0.cmp(&b.0));
     matches
+}
+
+/// Map one path segment to the backend's `file_key` charset: ASCII-lowercase, and any
+/// character outside `[a-z0-9_.-]` becomes `-` (collapsing runs, no leading/trailing `-`).
+fn sanitize_key_component(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 fn read_one(file_key: String, abs_path: PathBuf, max_bytes: u64) -> ResolvedWatchedFile {
@@ -248,10 +267,10 @@ mod tests {
     }
 
     #[test]
-    fn glob_expands_and_prefixes_file_key() {
+    fn glob_expands_and_normalises_file_key() {
         let d = scratch("glob");
-        fs::write(d.join("A.xml"), b"1").unwrap();
-        fs::write(d.join("B.xml"), b"2").unwrap();
+        fs::write(d.join("ChromophoreList.xml"), b"1").unwrap();
+        fs::write(d.join("GUI Settings.xml"), b"2").unwrap();
         fs::write(d.join("ignore.txt"), b"3").unwrap();
         let spec = WatchedFileSpec {
             file_key: "settings/",
@@ -261,7 +280,29 @@ mod tests {
         };
         let got = expand_glob(&spec, &d);
         let keys: Vec<_> = got.iter().map(|(k, _)| k.clone()).collect();
-        assert_eq!(keys, ["settings/A.xml", "settings/B.xml"]);
+        // lowercased; space -> '-'; matches the backend charset [a-z0-9_./-]
+        assert_eq!(
+            keys,
+            ["settings/chromophorelist.xml", "settings/gui-settings.xml"]
+        );
         fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn sanitize_key_component_matches_backend_charset() {
+        assert_eq!(
+            sanitize_key_component("ChromophoreList.xml"),
+            "chromophorelist.xml"
+        );
+        assert_eq!(
+            sanitize_key_component("Last Known Good.XML"),
+            "last-known-good.xml"
+        );
+        assert_eq!(sanitize_key_component("--weird__name--"), "weird__name");
+        assert_eq!(sanitize_key_component("a/b\\c:d*e"), "a-b-c-d-e");
+        let ok = sanitize_key_component("Größe#1.xml");
+        assert!(ok
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '-')));
     }
 }
