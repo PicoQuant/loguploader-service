@@ -60,4 +60,20 @@ reported via `measurement_type: "upgrade_attempt"` (no backend change). Clarific
 resolved: C1 reboot cadence OK (boot-triggered hop accepted, no v1 bridge); C2 no
 code-signing cert (SHA-256 + release access control as v1; Authenticode switch left dormant).
 Ripple: spec 002 `contracts/cli.md` — Luminosa binary/service names differ from the
-`pquploader-<product>` scheme (small amendment pending).
+`pquploader-<product>` scheme (small amendment pending, spec 001 T050).
+
+**/speckit-analyze 2026-09-08 — A1–A8 remediated:**
+- A1 (HIGH): SC-009 reworded — "pending file" scoped to config-backup data; unsent v1 logs
+  are intentionally not migrated (v2 has no logs).
+- A2 (HIGH): FR-005 split — daily trigger for v2→v2.x; **v1→v2 first hop is boot-triggered**
+  (fielded task immutable), accepted via C1, bridge release as fallback.
+- A3: FR-004 now names the 95%/14-day bound and requires `fleet-status.py` to report
+  migrated-% + a `stuck`-threshold bridge-release signal (T035).
+- A4: added spec 002 **T045a** — build `src/upgrade.rs` (`version --json` / `is-newer` /
+  `upgrade-report`) during 002's implementation, not only spec 001's.
+- A5: `release.yml` is **owned by spec 001 T048**; spec 002 T045 defers to it.
+- A6: FR-014 notes v1's `public_link` (Nextcloud) is deliberately not carried.
+- A7: FR-015 rewritten — v2 starts fresh, worst case one redundant backup (spec 002 FR-016).
+- A8: FR-005d + T037 define crash-loop (≥3 starts/1h or cycle.ok=false ×3) and stopped
+  service (no heartbeat ≥3× cycle interval).
+- LOW A9–A12 partly folded: T048 grep gate now covers `updater/` `installer/` `src/`.

@@ -79,3 +79,9 @@ heartbeat. The channel-aware updater + beta→stable promotion gate live in `spe
   `blocked_backups`, `last_failure_category`); "stopped/crash-loop" is derived in spec 001
   from heartbeat gaps. Added `last_failure_category` to the heartbeat schema + data-model.
 - LOW findings F5–F10 left as-is (benign / acknowledged in the docs).
+
+**spec 001 /speckit-analyze ripple (2026-09-08):**
+- Added **T045a** — `src/upgrade.rs` (`version --json` / `is-newer` / `upgrade-report`),
+  required by the v1→v2 upgrade; build it during this feature's implementation.
+- **T045** is now "verify only" — `.github/workflows/release.yml` is owned by spec 001 T048.
+- Pending: amend `contracts/cli.md` for Luminosa's kept v1 identifiers (spec 001 T050).

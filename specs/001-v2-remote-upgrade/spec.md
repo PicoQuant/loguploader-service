@@ -218,11 +218,19 @@ it onto v2.
   basis without any interactive session.
 - **FR-003**: The upgrade check and application MUST run with sufficient privilege to replace
   the service software and MUST NOT require a logged-in user.
-- **FR-004**: The system MUST bound the rollout: a defined percentage of reachable machines
-  complete the upgrade within a defined time window after publication (see Success Criteria).
-- **FR-005**: If a machine's upgrade trigger is tied to an event that may not occur for long
-  periods (e.g. reboot), the system MUST provide an additional opportunity so the bound in
-  FR-004 still holds.
+- **FR-004**: The system MUST bound the rollout: **≥ 95% of reachable machines within 14
+  days** of a stable publication (SC-001; for the v1→v2 hop, "or next boot" per FR-005).
+  `tools/fleet-status.py` MUST report the migrated percentage against this bound; a `stuck`
+  count above a set threshold is the signal to ship a v1 bridge release.
+- **FR-005**: For **v2→v2.x** updates, the machine MUST NOT depend on a boot event alone:
+  v2's updater task carries both a boot trigger and a daily trigger.
+
+  **v1→v2 first hop exception**: the fielded v1 task is `ONSTART`-only and cannot be changed
+  remotely, so the first hop is boot-triggered. This is accepted (clarification C1 — the
+  Luminosa fleet reboots often enough for the SC-001 window). If a fleet turns out to reboot
+  rarely, a **v1 bridge release** (`installer/v1-bridge.iss`, not built) that adds a daily
+  trigger ships first. SC-001's window is read as "14 days *or* next boot after publication"
+  for the v1→v2 hop.
 
 #### Release channels & staged rollout
 
@@ -238,8 +246,10 @@ it onto v2.
   installed by hand.
 - **FR-005d**: A stable `vX.Y.Z` MUST NOT be published until the **matching beta build** has
   run at least **7 days** on at least **3 beta instruments** with **zero Sev-1 telemetry**
-  (failed upgrade, crash-loop, or stopped service) over that window. (Constitution — Build,
-  Release & Distribution.)
+  over that window. Sev-1 = any of: an upgrade `outcome` of `rollback_failed`; a **crash-loop**
+  (≥ 3 service starts within 1 h, or `cycle.ok = false` on ≥ 3 consecutive heartbeats); a
+  **stopped service** (no heartbeat for ≥ 3× the cycle interval while the machine is
+  otherwise reachable). (Constitution — Build, Release & Distribution.)
 - **FR-005e**: The maintainer MUST be able to tell, from fleet telemetry alone, which
   machines are on the beta channel and their health over the beta window, so FR-005d can be
   evaluated without contacting customers.
@@ -275,10 +285,13 @@ it onto v2.
 
 #### Configuration continuity
 
-- **FR-014**: Device-specific configuration and secrets required for the uploader to function
-  (at minimum, the upload destination) MUST survive the upgrade with no re-provisioning. The
-  migration MUST perform a one-time translation of the v1 configuration into v2's configuration
-  format and location.
+- **FR-014**: Any device-specific configuration required for the uploader to function MUST
+  survive the upgrade with no re-provisioning, via a one-time translation of the v1
+  configuration into v2's format and location. **Note**: v2's upload destination and
+  credential are compiled into the build (spec 002), and v1's `public_link` is
+  Nextcloud-specific and deliberately **not** carried. In practice the translation carries at
+  most non-transport settings (e.g. the poll interval → `cycle_interval_secs`) — the
+  machinery below matters mostly for the missing/partial/idempotent cases.
 - **FR-014a**: The configuration translation MUST be idempotent: if v2 configuration already
   exists (e.g. on a retry after rollback), the translation MUST NOT overwrite or corrupt it.
 - **FR-014b**: If the v1 configuration is missing, partial, or malformed, the translation MUST
@@ -287,9 +300,11 @@ it onto v2.
   attention rather than running silently misconfigured.
 - **FR-014c**: The original v1 configuration MUST be preserved unmodified until the new version
   passes its health check, so that a rollback also restores working v1 configuration.
-- **FR-015**: Any per-device state that prevents duplicate or redundant work (e.g. "already
-  uploaded" markers, last-checked timestamps) MUST either carry across the upgrade or degrade
-  safely (at worst a one-time redundant upload, never data loss).
+- **FR-015**: Any per-device state that prevents duplicate or redundant work MUST degrade
+  safely. v2 starts with fresh state (`state.json`); by spec 002 FR-016 the first v2 cycle
+  treats every watched file as changed, so the worst case is **one redundant config-file
+  backup**, never data loss. v1's `*.lastcheck` / `client_version_last_upload.txt` markers
+  are not migrated (they belong to mechanisms v2 does not use).
 
 #### Mechanism migration
 
@@ -373,8 +388,10 @@ it onto v2.
   silently broken.
 - **SC-008a**: Machines with no working v1 updater: 0 receive an unattended upgrade, 100% are
   visible in fleet status as manual-intervention-required until the runbook is applied.
-- **SC-009**: An interrupted upgrade produces at most one redundant re-upload of already-sent
-  data and never loses a pending file.
+- **SC-009**: An interrupted upgrade never loses **configuration-backup** data that v2 is
+  responsible for: at worst v2's first cycle re-sends one already-current file (spec 002
+  FR-016). Unsent v1 **log** files are out of scope — v2 does not collect logs (spec 002
+  FR-001) — so they are intentionally not carried across the migration.
 
 ## Assumptions
 
