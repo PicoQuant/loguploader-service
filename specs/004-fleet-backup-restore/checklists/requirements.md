@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Fleet Backup Archive & Restore
+# Specification Quality Checklist: Fleet Backup Archive
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-09-08
@@ -31,15 +31,18 @@
 
 ## Notes
 
-- The seed tool `tools/fleet_backup_pull.py` is named in Overview/Dependencies as the starting
-  point for the pull half. This is a factual pointer, not an implementation prescription — the
-  spec does not constrain language or design.
-- `api.picoquant.com` / `.env` are named because they are the *existing, external* contract
-  this maintainer tool consumes (defined by specs 002/003), not a design choice being made
-  here. Treated as domain context, not implementation detail.
+- **Scope narrowed 2026-09-08**: only the archive **pull** (US1) is in this increment.
+  Restore, inspection, and unattended-operation niceties are recorded under *Deferred — later
+  increments* and will return as their own scoped work. FR-010 / FR-011 (keep every version,
+  keep a complete manifest) are deliberately retained so the deferred work has its data.
+- The seed tool `tools/fleet_backup_pull.py` is named as a starting point — a factual pointer,
+  not a design constraint on language or structure.
+- `api.picoquant.com` / `.env` are named because they are the *existing external contract*
+  this maintainer tool consumes (defined by specs 002/003), i.e. domain context, not an
+  implementation choice being made here.
 - Two Open Items are genuine external unknowns (backend retention parameters; whether the
   admin list endpoint already returns full per-file history). Neither blocks planning — both
-  have a documented working assumption and a small spec-003 fallback.
-- The scheduler (cron job) is explicitly out of scope per the user; the spec requires only
-  that the tool is safe/correct to run unattended.
+  have a documented working assumption; the second has a small spec-003 fallback and FR-010 /
+  SC-009 flag the dependency.
+- The scheduler (cron job) is explicitly out of scope per the user.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.
