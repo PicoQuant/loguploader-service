@@ -1,5 +1,10 @@
 name: Release (Windows)
 
+# NOTE: the channel / prerelease / rollback-composition rules and the ISCC+cargo matrix are
+# OWNED by specs/001-v2-remote-upgrade (its T048). This file is the minimal v2 release path
+# so the agent can ship before spec 001 lands; keep the artifact names matching
+# specs/002-v2-config-backup-telemetry/contracts/cli.md.
+
 on:
   push:
     tags:
@@ -8,70 +13,99 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-
+  no-secret-in-source:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Grep tree for a committed fleet token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nI -E 'TELEMETRY_FLEET_TOKENS_[A-Z]+\s*=\s*[A-Za-z0-9._-]{16,}' -- \
+               ':!*.example' ':!**/spec*.md' ':!**/research.md' ; then
+            echo "::error::a fleet-token-shaped value is committed to the tree"; exit 1
+          fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+  build-and-release:
+    needs: no-secret-in-source
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [luminosa, solira]
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Create settings.py from secrets (optional)
+      - name: Is this tag a beta? (vX.Y.Z-beta.N)
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-beta.* ]]; then
+            echo "is_beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # a stable tag builds only stable artifacts; a beta tag builds only beta artifacts
+      - name: Skip mismatched channel
+        id: gate
+        shell: bash
+        run: |
+          want_beta='${{ steps.tag.outputs.is_beta }}'
+          have_beta=$([[ '${{ matrix.channel }}' == 'beta' ]] && echo true || echo false)
+          if [[ "$want_beta" == "$have_beta" ]]; then echo "go=true" >> "$GITHUB_OUTPUT";
+          else echo "go=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install Rust
+        if: steps.gate.outputs.go == 'true'
+        shell: pwsh
+        run: rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
+
+      - name: Build ${{ matrix.product }} / ${{ matrix.channel }}
+        if: steps.gate.outputs.go == 'true'
         shell: pwsh
         env:
-          PUBLIC_LINK: ${{ secrets.PUBLIC_LINK }}
-        run: |
-          if ($env:PUBLIC_LINK) {
-            "public_link = `"$env:PUBLIC_LINK`"" | Out-File -FilePath "settings.py" -Encoding utf8 -NoNewline
-          } else {
-            Write-Host "No PUBLIC_LINK secret set; building without embedded settings.py"
-          }
+          PQ_PRODUCT: ${{ matrix.product }}
+          PQ_CHANNEL: ${{ matrix.channel }}
+          TELEMETRY_FLEET_TOKENS_LUMINOSA: ${{ secrets.TELEMETRY_FLEET_TOKENS_LUMINOSA }}
+          TELEMETRY_FLEET_TOKENS_SOLIRA: ${{ secrets.TELEMETRY_FLEET_TOKENS_SOLIRA }}
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Generate derived version files
-        run: python tools/gen_build_versions.py
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Build EXE (PyInstaller)
-        run: |
-          python -m PyInstaller --onefile --hidden-import win32timezone --version-file version_info.txt .\loguploaderservice.py
-
-      - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      - name: Build installer (Inno Setup)
+      - name: Assemble artifacts (contracts/cli.md names)
+        if: steps.gate.outputs.go == 'true'
         shell: pwsh
         run: |
+          $suffixDash  = if ($env:CH -eq 'beta') { '-beta' } else { '' }
+          $suffixSpace = if ($env:CH -eq 'beta') { ' Beta' } else { '' }
+          $exe = "pquploader-$($env:PROD)$suffixDash.exe"
+          Copy-Item "target/x86_64-pc-windows-msvc/release/pquploader.exe" $exe
+
+          $prodTitle = (Get-Culture).TextInfo.ToTitleCase($env:PROD)
+          $iss = "installer/v2/$($env:PROD)$suffixDash.iss"
+          $version = (Get-Content VERSION).Trim()
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) {
-            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
-          }
-          if (!(Test-Path $iscc)) {
-            throw "ISCC.exe not found after innosetup install"
-          }
-          & $iscc ".\LogUploaderService_Setup_script.iss"
+          if (!(Test-Path $iscc)) { choco install innosetup -y; }
+          & $iscc "/DMyAppVersion=$version" "/DMyBinary=..\..\$exe" $iss
 
-      - name: Generate SHA256 for installer
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem -Path "Output" -Filter "*.exe" | Select-Object -First 1
-          if (!$installer) { throw "Installer not found in Output/" }
-          $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $($installer.Name)" | Out-File -FilePath ("$($installer.FullName).sha256") -Encoding ascii -NoNewline
+          $installer = Get-ChildItem Output -Filter "*Setup.exe" | Select-Object -First 1
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Out-File "$($installer.FullName).sha256" -Encoding ascii -NoNewline
+        env:
+          PROD: ${{ matrix.product }}
+          CH: ${{ matrix.channel }}
 
-      - name: Create GitHub Release
+      - name: Upload to the Release
+        if: steps.gate.outputs.go == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ steps.tag.outputs.is_beta == 'true' }}
           files: |
-            dist/loguploaderservice.exe
-            Output/*.exe
-            Output/*.sha256
+            pquploader-${{ matrix.product }}*.exe
+            Output/*Setup.exe
+            Output/*Setup.exe.sha256
           generate_release_notes: true

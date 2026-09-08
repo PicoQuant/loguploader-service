@@ -5,63 +5,92 @@ on:
   push:
     branches:
       - main
+      - v2-specs
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-
+  # ------------------------------------------------------------------ #
+  # No fleet-token-shaped secret may be committed (FR-023, SC-006).    #
+  # ------------------------------------------------------------------ #
+  no-secret-in-source:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Grep tree for a committed fleet token
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The example files carry only the literal placeholder.
+          if git grep -nI -E 'TELEMETRY_FLEET_TOKENS_[A-Z]+\s*=\s*[A-Za-z0-9._-]{16,}' -- \
+               ':!*.example' ':!**/spec*.md' ':!**/research.md' ; then
+            echo "::error::a fleet-token-shaped value is committed to the tree"
+            exit 1
+          fi
+          echo "no committed token found"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+  build:
+    needs: no-secret-in-source
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [luminosa, solira]
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (pinned MSRV toolchain, msvc target)
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
+          rustup component add rustfmt clippy
+          rustc -V ; cargo -V
+
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          python-version: "3.10"
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Create settings.py from secrets (optional)
+      - name: fmt + clippy (once is enough, but cheap)
+        if: matrix.product == 'luminosa' && matrix.channel == 'stable'
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Build ${{ matrix.product }} / ${{ matrix.channel }}
         shell: pwsh
         env:
-          PUBLIC_LINK: ${{ secrets.PUBLIC_LINK }}
-        run: |
-          if ($env:PUBLIC_LINK) {
-            "public_link = `"$env:PUBLIC_LINK`"" | Out-File -FilePath "settings.py" -Encoding utf8 -NoNewline
-          } else {
-            Write-Host "No PUBLIC_LINK secret set; building without embedded settings.py"
-          }
+          PQ_PRODUCT: ${{ matrix.product }}
+          PQ_CHANNEL: ${{ matrix.channel }}
+          # secrets are named exactly like the backend variable (FR-024).
+          TELEMETRY_FLEET_TOKENS_LUMINOSA: ${{ secrets.TELEMETRY_FLEET_TOKENS_LUMINOSA }}
+          TELEMETRY_FLEET_TOKENS_SOLIRA: ${{ secrets.TELEMETRY_FLEET_TOKENS_SOLIRA }}
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Generate derived version files
-        run: python tools/gen_build_versions.py
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Build EXE (PyInstaller)
-        run: |
-          python -m PyInstaller --onefile --hidden-import win32timezone --version-file version_info.txt .\loguploaderservice.py
-
-      - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      - name: Build installer (Inno Setup)
+      - name: Name the artifact per contracts/cli.md
+        id: name
         shell: pwsh
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) {
-            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
-          }
-          if (!(Test-Path $iscc)) {
-            throw "ISCC.exe not found after innosetup install"
-          }
-          & $iscc ".\LogUploaderService_Setup_script.iss"
+          $suffix = if ($env:MATRIX_CHANNEL -eq 'beta') { '-beta' } else { '' }
+          $exe = "pquploader-$($env:MATRIX_PRODUCT)$suffix.exe"
+          Copy-Item "target/x86_64-pc-windows-msvc/release/pquploader.exe" $exe
+          "exe=$exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        env:
+          MATRIX_PRODUCT: ${{ matrix.product }}
+          MATRIX_CHANNEL: ${{ matrix.channel }}
 
-      - name: Upload artifacts
+      - name: Run tests (mock backend only; no secret needed)
+        if: matrix.channel == 'stable'
+        run: cargo test --target x86_64-pc-windows-msvc
+
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: windows-artifacts
-          path: |
-            dist\\loguploaderservice.exe
-            Output\\*.exe
-            *.exe
+          name: ${{ matrix.product }}-${{ matrix.channel }}
+          path: ${{ steps.name.outputs.exe }}

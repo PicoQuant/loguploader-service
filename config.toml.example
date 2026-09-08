@@ -1,0 +1,15 @@
+# pquploader runtime config — copy to `config.toml` next to the .exe to override.
+# All keys are optional; the values below are the built-in defaults.
+# Product, channel and the fleet token are compiled in and are NOT read from here.
+
+# How often the work cycle (backup pass + heartbeat) runs, in seconds. Default 30 min.
+cycle_interval_secs = 1800
+
+# Backend base URL. Override only for testing / staging.
+api_base_url = "https://api.picoquant.com"
+
+# Skip (and surface in the heartbeat) any watched file larger than this. Default 50 MiB.
+backup_max_bytes = 52428800
+
+# HTTP read timeout in seconds (connect timeout is fixed at 10 s).
+http_timeout_secs = 60

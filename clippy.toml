@@ -1,0 +1,3 @@
+# Keep the agent small and blunt (Constitution V).
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300

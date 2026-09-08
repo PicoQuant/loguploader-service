@@ -97,11 +97,27 @@ sc start PQUploaderLuminosa
 # ... wait one cycle interval (default 30 min, or set config.toml cycle_interval_secs=60) ...
 # check Event Viewer -> Windows Logs -> Application, source "PicoQuant Luminosa LogUploader"
 # check C:\ProgramData\PicoQuant\Luminosa\v2agent\cycles.log and state.json
-pquploader-luminosa.exe uninstall
+shutdown /r /t 0                     # reboot
+# ... after the machine is back, with NO interactive logon ...
+sc query PQUploaderLuminosa          # STATE == RUNNING
+# confirm cycles.log / state.json got a fresh entry post-reboot
+pquploader-luminosa.exe uninstall    # add --purge to also drop the v2agent dir
 ```
 
-Expected: service starts without a logon, logs a cycle summary to the Event Log each
-interval, `state.json` updates, and stop is responsive.
+Expected: service starts without a logon (auto-delayed / LocalSystem), resumes on its own
+after the reboot, logs a cycle summary to the Event Log each interval, `state.json` updates,
+and stop is responsive.
+
+This step is **manual / not automated** (T040) — `windows-service` SCM integration cannot be
+exercised from `cargo test`.
+
+## 6. Fleet token rotation drill (optional)
+
+The accept-two-values rotation (FR-025, SC-007) is documented step-by-step in `README.MD` →
+**Fleet token rotation**. To rehearse it against the test backend: add a second value to
+`TELEMETRY_FLEET_TOKENS_LUMINOSA` (`new,old`), rebuild, confirm `once` still succeeds, then
+remove `old` from the backend and confirm a binary still carrying only `old` now gets `401`
+`authentication` while the `new` build keeps working.
 
 ## Done when
 
@@ -110,3 +126,4 @@ interval, `state.json` updates, and stop is responsive.
 - Re-running `once` sends nothing when nothing changed.
 - `cargo test` passes.
 - The token value does not appear anywhere in the git tree.
+- Step 5 (manual): the service survives a reboot with no logon.

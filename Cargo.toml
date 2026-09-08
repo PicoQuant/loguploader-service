@@ -1,0 +1,44 @@
+[package]
+name = "pquploader"
+version = "0.0.0"                 # real version comes from the repo VERSION file via build.rs (Constitution II)
+edition = "2021"
+rust-version = "1.74"
+publish = false
+description = "PicoQuant v2 device telemetry + configuration-backup agent (Windows service)"
+
+[lib]
+name = "pquploader"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pquploader"
+path = "src/main.rs"
+
+[dependencies]
+windows-service = "0.7"
+# default features give the rustls TLS backend (webpki-roots trust anchors) + gzip.
+ureq = { version = "2.12", features = ["json"] }
+webpki-roots = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros"] }
+winreg = "0.52"
+eventlog = "0.2"
+log = "0.4"
+toml = "0.8"
+
+[dev-dependencies]
+mockito = "1.5"
+
+# build.rs emits the Windows version resource from the VERSION file (Constitution II).
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"
+codegen-units = 1
+# NOTE: do NOT set `panic = "abort"` — run_loop.rs relies on std::panic::catch_unwind
+# as the last-resort backstop that keeps the service loop alive (Constitution I).

@@ -21,6 +21,10 @@ settings.py
 .env.*
 !.env.example
 
+# Rust (v2 agent) — commit Cargo.lock (binary crate), ignore build output
+/target
+**/*.rs.bk
+
 # file change markers created by has_file_changed()
 *.lastcheck
 
