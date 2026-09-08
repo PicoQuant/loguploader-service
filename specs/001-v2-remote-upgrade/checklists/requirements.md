@@ -50,3 +50,14 @@ added FR-005a–FR-005e and SC-001a. Channel (`stable`/`beta`) is compiled into 
 the existing v1 fleet only auto-updates from stable. A stable `vX.Y.Z` MUST NOT be cut until
 the matching beta ran ≥7 days on ≥3 beta instruments with 0 Sev-1 telemetry. Mirrored in
 constitution v1.3.0 (Build section) and spec 002 (heartbeat carries the channel).
+
+**/speckit-plan 2026-09-08** — plan + research + data-model + contracts + quickstart written.
+Constitution Check PASS (v1.3.0). Key design: migration logic inside the v2 installer
+`[Code]`; **only Luminosa has a v1 fleet** (Solira greenfield); Luminosa v2 keeps every v1
+identifier (AppId/dir/exe/service/task) for near-zero migration surface; snapshot →
+health-check (`loguploaderservice.exe once` → `heartbeat.ok`) → auto-rollback; failed attempts
+reported via `measurement_type: "upgrade_attempt"` (no backend change). Clarifications
+resolved: C1 reboot cadence OK (boot-triggered hop accepted, no v1 bridge); C2 no
+code-signing cert (SHA-256 + release access control as v1; Authenticode switch left dormant).
+Ripple: spec 002 `contracts/cli.md` — Luminosa binary/service names differ from the
+`pquploader-<product>` scheme (small amendment pending).

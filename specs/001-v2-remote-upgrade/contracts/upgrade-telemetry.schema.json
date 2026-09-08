@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/v2upgrade/upgrade-attempt.json",
+  "title": "upgrade_attempt telemetry payload",
+  "description": "The `payload` of POST /api/v2/products/{product}/telemetry with measurement_type=\"upgrade_attempt\", sent once per terminal upgrade outcome by the v2 installer via `loguploaderservice.exe upgrade-report`. Reuses the existing telemetry endpoint (open JSON payload) — NO backend change.",
+  "type": "object",
+  "required": ["machine_id", "from_version", "to_version", "outcome", "channel", "attempt_utc"],
+  "additionalProperties": false,
+  "properties": {
+    "machine_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "from_version": { "type": "string", "description": "version before this attempt, e.g. 0.11.12" },
+    "to_version": { "type": "string", "description": "target version, e.g. 2.0.0 or 2.1.0-beta.3" },
+    "outcome": {
+      "type": "string",
+      "enum": ["ok", "integrity_failed", "install_failed", "health_check_failed", "rolled_back", "rollback_failed"],
+      "description": "rollback_failed is the only true Sev-1"
+    },
+    "cause": {
+      "type": ["string", "null"],
+      "maxLength": 500,
+      "description": "short human-readable reason for a non-ok outcome"
+    },
+    "channel": { "type": "string", "enum": ["stable", "beta"] },
+    "attempt_utc": { "type": "string", "format": "date-time" },
+    "agent_version": { "type": ["string", "null"], "description": "the v2 agent version doing the reporting" },
+    "health_ms": { "type": ["integer", "null"], "minimum": 0, "description": "how long the health check took" },
+    "config_notes": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "v1 config keys that could not be translated (FR-014b)"
+    }
+  }
+}
