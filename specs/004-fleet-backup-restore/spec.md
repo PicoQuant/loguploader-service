@@ -33,6 +33,15 @@ this pull and the starting point.
 Restoring an archived configuration onto an instrument is the natural next step and stays in
 this feature's scope overall, but is **not** part of this increment.
 
+## Clarifications
+
+### Session 2026-09-08
+
+- Q: Should the local archive keep every version forever, or apply its own retention? → A: Keep every version forever — append-only, no prune command or retention config in this increment.
+- Q: What should a run do when a previous run is still in progress (overlapping schedule)? → A: Detect the lock, log "already running", exit 0 without doing anything (the next scheduled run catches up).
+- Q: One archive folder per serial, or per (serial + machine identifier)? → A: Per (serial, machine id) — `<product>/<serial>/<machine-id>/…`, always. One folder maps to exactly one physical machine.
+- (Resolved by investigation, not a question) The admin endpoint `GET /api/v2/admin/products/{product}/backups` already returns full per-file **version history** (all versions, newest first), verified live. FR-010 / SC-009 need no `specs/003-backend-api-support` change.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - The fleet's backups accumulate in a permanent local archive (Priority: P1)
@@ -68,8 +77,9 @@ copy is still present and unchanged.
 4. **Given** a pull is interrupted partway (process killed, network drop), **When** it is run
    again, **Then** it resumes, every already-archived artifact is skipped, and the archive is
    left consistent (no partial files, manifest not corrupted).
-5. **Given** an instrument that has never appeared before, **When** the pull runs, **Then** a
-   new per-serial folder is created for it and all of its available backups are archived.
+5. **Given** a machine that has never appeared before, **When** the pull runs, **Then** a new
+   `<product>/<serial>/<machine-id>/` folder is created for it and all of its available backups
+   are archived.
 6. **Given** a downloaded artifact whose content does not match its recorded fingerprint,
    **When** the pull runs, **Then** that artifact is not written into the archive, the failure
    is reported, and the rest of the run continues.
@@ -89,12 +99,16 @@ copy is still present and unchanged.
 - **The same content under two file identities** (a file renamed on the device) — both
   identities are archived; de-duplication of identical bytes is an optimisation, not a
   requirement.
-- **An instrument's serial changes** (hardware swap, serial file fixed) — its later backups
-  land under the new serial; the old serial's archive is retained.
-- **Two machines report the same serial** — their backups are both archived under that serial
-  and remain distinguishable by machine identifier in the manifest.
-- **An instrument whose serial is "unknown"** — its backups are archived under an explicit
-  "unknown" folder, still keyed by machine identifier in the manifest.
+- **An instrument's serial changes** (hardware swap, serial file fixed) — the machine
+  identifier is unchanged, so a new `<serial>/<machine-id>/` folder appears (new serial, same
+  machine id) and the machine's earlier `<old-serial>/<machine-id>/` folder is retained.
+- **Two machines report the same serial** — each gets its own `<serial>/<machine-id>/` folder;
+  their file histories never interleave.
+- **An instrument whose serial is "unknown"** — archived under `<product>/unknown/<machine-id>/`,
+  so multiple unknown-serial machines stay separate.
+- **A machine that cannot read its machine identifier** (all-zero fallback) — archived under
+  that fallback id; the manifest's serial + receipt times still disambiguate if two such
+  machines exist.
 - **Archive storage fills up** — the run fails safely (no partial artifacts, manifest intact)
   and reports the condition; it never deletes archived history to make room.
 - **The archive folder was moved or renamed** between runs — the tool re-establishes what is
@@ -137,20 +151,24 @@ copy is still present and unchanged.
 - **FR-007**: The local archive MUST be **durable and append-only with respect to history**:
   once an artifact has been archived by a successful run, later runs MUST NOT delete or
   overwrite it, even if the backend no longer exposes it. The archive is the system of record;
-  the backend is a transient source.
+  the backend is a transient source. This increment ships **no local retention or prune** —
+  every version is kept indefinitely (a prune command may be added in a later increment).
 - **FR-008**: Each archived artifact MUST be **integrity-verified** against its recorded
   fingerprint before being committed to the archive. A mismatch MUST NOT be written, MUST be
   reported, and MUST NOT abort the rest of the run.
-- **FR-009**: The archive MUST be organised as **one folder per instrument serial** (with an
-  explicit folder for instruments whose serial is unknown), so a whole fleet is pulled in one
-  run and a single instrument can be located in isolation.
-- **FR-010**: Within an instrument's folder, the archive MUST retain **every version** of each
+- **FR-009**: The archive MUST be organised as **one folder per (instrument serial, machine
+  identifier)** — `<product>/<serial>/<machine-id>/…`, with an explicit `unknown` serial
+  segment when the serial is not known. Every such folder therefore maps to exactly one
+  physical machine, so a whole fleet is pulled in one run and a single machine can be located
+  and operated on in isolation even when two machines share a serial (or both report
+  `unknown`).
+- **FR-010**: Within a machine's folder, the archive MUST retain **every version** of each
   configuration file it has ever captured, each identifiable and retrievable, with its backend
   receipt time and size. (Restoring a chosen version is a later increment; keeping them is
   this one.)
-- **FR-011**: The archive MUST record, per instrument, a **manifest** of every backup it holds
-  — file identity, versions, fingerprints, sizes, receipt times, original source path, and the
-  reporting machine identifier — so that "what do we have" can be answered without contacting
+- **FR-011**: The archive MUST record, per machine folder, a **manifest** of every backup it
+  holds — serial, machine identifier, file identity, versions, fingerprints, sizes, receipt
+  times, original source path — so that "what do we have" can be answered without contacting
   the backend, and so a later restore increment has what it needs.
 - **FR-012**: A pull that is **interrupted** MUST leave the archive consistent (no partial
   artifacts, manifest not corrupted) and MUST resume correctly on the next run.
@@ -165,7 +183,9 @@ copy is still present and unchanged.
   or returning errors for part of a run MUST be handled as a partial run (retry next run),
   not a crash.
 - **FR-017**: If two runs overlap (scheduler fires again before the previous finished), the
-  second MUST NOT corrupt the archive — it either waits or exits cleanly.
+  second MUST detect that a run is in progress, log "already running", and **exit 0 without
+  touching the archive**. It MUST NOT wait, queue, or error. The next scheduled run catches up
+  (the pull is incremental).
 
 ### Key Entities *(include if feature involves data)*
 
@@ -173,12 +193,14 @@ copy is still present and unchanged.
   content fingerprint, size, backend receipt time, original source path, reporting machine
   identifier, and file identity. Produced by the v2 agent, retained transiently by the
   backend, retained permanently by the archive.
-- **Local Archive**: the durable store on a maintainer machine, organised by product then
-  instrument serial. Holds every artifact ever captured plus a per-instrument manifest.
-  Append-only with respect to history. The system of record for configuration history.
-- **Instrument Folder**: all archived artifacts for one instrument serial (or the "unknown"
-  bucket), plus its manifest — the unit that is pulled and, later, restored.
-- **Manifest**: the per-instrument index of archived artifacts and their metadata; lets
+- **Local Archive**: the durable store on a maintainer machine, organised
+  `<product>/<serial>/<machine-id>/…`. Holds every artifact ever captured plus a per-machine
+  manifest. Append-only with respect to history; no local retention/prune in this increment.
+  The system of record for configuration history.
+- **Machine Folder**: all archived artifacts for one physical machine (one `serial` +
+  `machine-id`), plus its manifest — the unit that is pulled and, later, restored.
+- **Manifest**: the per-machine index of archived artifacts and their metadata (serial,
+  machine id, file identity, versions, fingerprints, sizes, receipt times, source path); lets
   inspection and (later) restore work without the backend.
 - **Run Report**: the per-run summary — artifacts added, instruments seen, failures, overall
   status — and the exit status derived from it.
@@ -205,8 +227,8 @@ copy is still present and unchanged.
   and the archive stays complete with no maintainer intervention.
 - **SC-008**: From a run's output/exit status alone, a maintainer can tell whether it
   succeeded, partially succeeded, or failed, and how many artifacts were added.
-- **SC-009**: For every instrument, the archive holds **every version** of each file it ever
-  captured (not just the latest), each retrievable — the foundation the later restore
+- **SC-009**: For every machine folder, the archive holds **every version** of each file it
+  ever captured (not just the latest), each retrievable — the foundation the later restore
   increment builds on.
 
 ## Assumptions
@@ -215,8 +237,10 @@ copy is still present and unchanged.
   instrument/file and/or a time window — `specs/003-backend-api-support` names the version
   cap). The local archive exists precisely because that retention is not durable.
 - The admin retrieval endpoints from `specs/003-backend-api-support` (list backups with
-  filters + paging, fetch content by id) are available and stable. Whether "list" already
-  returns full per-file **history** (all versions, not just latest) is an Open Item.
+  filters + paging, fetch content by id) are available and stable. **Verified**: the list
+  endpoint returns full per-file version history (all versions, newest first).
+- The archive keeps every version indefinitely; there is no local retention/prune in this
+  increment (see Clarifications).
 - The maintainer machine that runs the pull has durable, backed-up storage for the archive;
   protecting the archive itself (offsite copy, RAID) is out of scope.
 - The archive tool may run on any platform (the pull is network + file writes only).
@@ -230,9 +254,9 @@ copy is still present and unchanged.
 - **`specs/002-v2-config-backup-telemetry`** — produces the backups this feature archives;
   defines the watched-file set, `file_key` scheme, and `source_path`.
 - **`specs/003-backend-api-support`** — the admin retrieval API (list / content) and the
-  backend retention behaviour this feature compensates for. If per-file version **history** is
-  not already listable via the existing `GET .../backups` endpoint with filters + paging, spec
-  003 gains a small addition to expose it.
+  backend retention behaviour this feature compensates for. The existing `GET .../backups`
+  endpoint (filters + paging) already returns full per-file version history — no spec-003
+  change needed.
 - An external scheduler on the maintainer machine (initially a cron job) to run the pull
   regularly — configured by the operator, **not shipped or specified by this feature**.
 - Durable local storage for the archive.
@@ -240,13 +264,10 @@ copy is still present and unchanged.
 
 ## Open Items
 
-- **Confirm backend retention parameters** (version cap and/or time window) so the pull
-  interval can be set with margin — it must be comfortably shorter than the shortest retention
-  so no version is pruned between runs.
-- **Confirm the admin list endpoint returns full per-file history** (all versions), or agree
-  the small spec-003 addition to expose it. FR-010 / SC-009 depend on this.
-- Decide whether the archive keeps **all** versions forever or applies its own configurable
-  retention (default assumed: keep everything).
+- **Confirm backend retention parameters** (version cap and/or time window) with the backend
+  team, so operator guidance can state a safe maximum pull interval — the interval must be
+  comfortably shorter than the shortest retention so no version is pruned between runs. Not
+  blocking: the tool's behaviour does not change, only the guidance number.
 
 ## Out of Scope
 

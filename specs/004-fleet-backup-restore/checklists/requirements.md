@@ -33,16 +33,17 @@
 
 - **Scope narrowed 2026-09-08**: only the archive **pull** (US1) is in this increment.
   Restore, inspection, and unattended-operation niceties are recorded under *Deferred — later
-  increments* and will return as their own scoped work. FR-010 / FR-011 (keep every version,
-  keep a complete manifest) are deliberately retained so the deferred work has its data.
+  increments*. FR-010 / FR-011 (keep every version, keep a complete manifest) are retained so
+  the deferred work has its data.
+- **Clarified 2026-09-08** (3 questions): archive is append-only with no prune/retention this
+  increment; overlapping runs skip and exit 0; archive layout is
+  `<product>/<serial>/<machine-id>/…` (one folder = one physical machine).
+- The one remaining Open Item (confirm backend retention parameters with the backend team)
+  does not block planning — it only sets an operator-guidance number, not tool behaviour. The
+  earlier open item about the admin list endpoint returning full history was resolved by live
+  verification.
 - The seed tool `tools/fleet_backup_pull.py` is named as a starting point — a factual pointer,
-  not a design constraint on language or structure.
-- `api.picoquant.com` / `.env` are named because they are the *existing external contract*
-  this maintainer tool consumes (defined by specs 002/003), i.e. domain context, not an
-  implementation choice being made here.
-- Two Open Items are genuine external unknowns (backend retention parameters; whether the
-  admin list endpoint already returns full per-file history). Neither blocks planning — both
-  have a documented working assumption; the second has a small spec-003 fallback and FR-010 /
-  SC-009 flag the dependency.
+  not a design constraint. `api.picoquant.com` / `.env` are the existing external contract
+  (specs 002/003), i.e. domain context.
 - The scheduler (cron job) is explicitly out of scope per the user.
-- Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.
+- Items marked incomplete require spec updates before `/speckit-plan`.
