@@ -233,19 +233,39 @@ cargo test        # unit + integration (mock backend, no real network)
 
 End-to-end validation against the real backend is `specs/002-v2-config-backup-telemetry/quickstart.md`.
 
-## Pulling backups off the backend (maintenance)
+## Fleet backup archive (maintenance)
 
-`tools/fleet_backup_pull.py` downloads stored config backups from `api.picoquant.com` to a
-local tree, one folder per instrument serial, using `EXPECTED_ADMIN_API_KEY` from `.env`.
-Stdlib only; sha256-verified; incremental on re-run.
+`tools/fleet_backup_pull.py` turns the backend's *transient* config-backup store into a
+**permanent local archive**. It downloads every backup `api.picoquant.com` currently exposes
+that the archive does not already hold, verifies it, files it, and never deletes captured
+history — so the archive stays complete after the backend prunes. Spec:
+`specs/004-fleet-backup-restore/`. Standard library only; run it from cron (the schedule is
+your job, not the tool's).
 
 ```
-python tools/fleet_backup_pull.py SN-12345 SN-67890          # named instruments, newest of each file
-python tools/fleet_backup_pull.py --all --out backups/2026-09-08   # whole Luminosa fleet
-python tools/fleet_backup_pull.py --all --all-versions       # + full version history under _versions/
-python tools/fleet_backup_pull.py --product solira --all --since 2026-09-01
+python tools/fleet_backup_pull.py                              # whole fleet, all products, into ./fleet-backups
+python tools/fleet_backup_pull.py --out backups/2026-09-08     # into a dated root
+python tools/fleet_backup_pull.py --product luminosa --serial SN-12345   # narrow
+python tools/fleet_backup_pull.py --since 2026-09-01           # only recent artifacts
 ```
 
-Per serial you get the newest content mirrored from its original `source_path`
-(`<serial>/ProgramData/PicoQuant/Luminosa/…`) plus a `manifest.json` of every record — copy a
-serial's folder back onto the device to restore it.
+Auth: `EXPECTED_ADMIN_API_KEY` from the environment or `--env` (`./.env`); it is never written
+to the archive, its manifests, or any output.
+
+Layout — one folder per physical machine:
+
+```
+<out>/<product>/<serial>/<machine-id>/
+    manifest.json                                     # what this folder holds + the cursor
+    ProgramData/PicoQuant/Luminosa/LastKnownGood.xml  # newest version, mirrored from source_path
+    _versions/…/LastKnownGood.xml/2026-09-08T12-52-52Z__b72cde42.bak   # every version
+```
+
+Re-runs are incremental (an artifact already in `manifest.json` is skipped, no hashing) and
+append-only — **no prune / retention in this increment**. Overlapping runs: the second logs
+"another run in progress" and exits 0.
+
+**Exit codes**: `0` success / nothing new / another run already in progress · `1` partial
+(≥1 artifact failed) · `2` fatal (no admin key, no product reachable, archive not writable).
+
+Tests: `python -m unittest discover -s tools -p 'test_*.py'` (no network).

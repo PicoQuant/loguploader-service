@@ -1,102 +1,188 @@
 #!/usr/bin/env python3
-"""Pull v2 config-backup artifacts from api.picoquant.com to a local tree.
+"""Pull v2 config-backup artifacts from api.picoquant.com into a permanent local archive.
 
-Maintenance / disaster-recovery tool. Talks to the admin API with the key from `.env`
-(`EXPECTED_ADMIN_API_KEY`). Downloads land under one folder per instrument serial, so you
-can pull a whole fleet at once and later restore a single device by copying its folder back.
+Maintainer / disaster-recovery tool (spec 004). Runs off the instrument, from an external
+scheduler (a cron job — the schedule is the operator's job, not this tool's). Each run sweeps
+the admin backup list for every product it can see and downloads every artifact the local
+archive does not already hold, verifies it, files it, and **never deletes or overwrites**
+history it already captured — so the archive stays complete even after the backend prunes.
 
-Layout (per serial)::
+Archive layout (one folder per physical machine)::
 
-    <out>/<product>/<serial>/
-        manifest.json                       # every backup record for this instrument
-        ProgramData/PicoQuant/Luminosa/ChromophoreList.xml     # newest content, mirrored
-        Program Files/PicoQuant/Luminosa/PQDevice.db           #   from `source_path`
-        _versions/ProgramData/.../ChromophoreList.xml/
-            2026-09-08T12-52-51Z_b72cde42.bak                  # older versions (--all-versions)
+    <out>/<product>/<serial>/<machine-id>/
+        manifest.json                                   # what this folder holds + the cursor
+        ProgramData/PicoQuant/Luminosa/LastKnownGood.xml # newest version, mirrored from source_path
+        _versions/ProgramData/PicoQuant/Luminosa/LastKnownGood.xml/
+            2026-09-08T12-52-52Z__b72cde42.bak          # every version (incl. newest)
 
-Every download is sha256-verified against the record. Re-runs are incremental: a file
-already on disk with the right digest is skipped.
+Auth: the admin key from `EXPECTED_ADMIN_API_KEY` (env or `--env` file). It is never written
+to the archive, the manifests, the lock file, or any line this tool prints.
 
-Examples::
+Exit codes: 0 = success / nothing new / another run already in progress; 1 = partial (>=1
+artifact failed); 2 = fatal (no admin key, no product reachable, archive not writable).
 
-    # everything for two instruments
-    python tools/fleet_backup_pull.py SN-12345 SN-67890
-
-    # the whole Luminosa fleet, all historical versions, into a dated folder
-    python tools/fleet_backup_pull.py --all --all-versions --out backups/2026-09-08
-
-    # just what changed in the last week for Solira
-    python tools/fleet_backup_pull.py --product solira --all --since 2026-09-01
-
-No third-party dependencies (stdlib only).
+No third-party dependencies (Python standard library only).
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
 import re
+import socket
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 
 DEFAULT_API = "https://api.picoquant.com"
-PAGE = 1000  # admin list max
+PAGE = 1000                 # admin list max page size
+SCHEMA_VERSION = 1          # manifest.json schema
+STALE_LOCK_SECS = 6 * 3600  # a lock older than this is reclaimed
+MAX_ATTEMPTS = 3
+BACKOFF_SECS = (2, 4)
+PRODUCTS = ("luminosa", "solira")
 
 
-# --------------------------------------------------------------------------- env
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def load_env(path: Path) -> dict[str, str]:
-    env: dict[str, str] = {}
-    if not path.is_file():
-        return env
-    for line in path.read_text(encoding="utf-8").splitlines():
+def log(msg: str) -> None:
+    """Diagnostics to stderr. Never receives the admin key."""
+    print(f"[fleet-backup-pull] {msg}", file=sys.stderr)
+
+
+# --------------------------------------------------------------------------- config
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        env[k.strip()] = v.strip().strip('"').strip("'")
-    return env
+        out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
+@dataclass
+class Config:
+    admin_key: str
+    api_base_url: str
+    timeout: float
+    out: Path
+    products: list[str]
+    serials: list[str]
+    since: str | None
+    until: str | None
+    quiet: bool
+    rebuild_manifests: bool
+    key_error: str | None = None  # set instead of admin_key when the key is missing -> exit 2
+
+
+def load_config(args: argparse.Namespace) -> Config:
+    env = parse_env_file(args.env)
+    key = os.environ.get("EXPECTED_ADMIN_API_KEY") or env.get("EXPECTED_ADMIN_API_KEY") or ""
+    base = (
+        args.api
+        or os.environ.get("API_BASE_URL")
+        or env.get("API_BASE_URL")
+        or DEFAULT_API
+    ).rstrip("/")
+    key_error = None
+    if not key:
+        key_error = (
+            f"EXPECTED_ADMIN_API_KEY is not set in the environment or {args.env} "
+            f"(the value is never printed)."
+        )
+    return Config(
+        admin_key=key,
+        api_base_url=base,
+        timeout=float(args.timeout),
+        out=Path(args.out),
+        products=list(args.product) if args.product else list(PRODUCTS),
+        serials=list(args.serial) if args.serial else [],
+        since=args.since,
+        until=args.until,
+        quiet=bool(args.quiet),
+        rebuild_manifests=bool(args.rebuild_manifests),
+        key_error=key_error,
+    )
 
 
 # --------------------------------------------------------------------------- http
 
 
+class ApiError(Exception):
+    pass
+
+
+class ApiAuthError(ApiError):
+    def __init__(self, code: int):
+        super().__init__(f"HTTP {code}")
+        self.code = code
+
+
+class ApiNotFound(ApiError):
+    pass
+
+
 class Api:
-    def __init__(self, base_url: str, admin_key: str, product: str):
+    def __init__(self, base_url: str, admin_key: str, timeout: float = 60.0):
         self.base = base_url.rstrip("/")
-        self.key = admin_key
-        self.product = product
+        self._key = admin_key
+        self.timeout = timeout
 
-    def _get(self, path: str, params: dict | None = None):
-        url = f"{self.base}{path}"
+    def _get(self, path: str, params: dict | None = None, *, content: bool = False) -> bytes:
+        url = self.base + path
         if params:
-            url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-        req = urllib.request.Request(url, headers={"X-ADMIN-API-KEY": self.key})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return resp.read()
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", "replace")[:300]
-            raise SystemExit(f"HTTP {e.code} for {path}: {body}") from None
-        except urllib.error.URLError as e:
-            raise SystemExit(f"cannot reach {self.base}: {e.reason}") from None
+            clean = {k: v for k, v in params.items() if v is not None and v != ""}
+            url += "?" + urllib.parse.urlencode(clean)
+        last: Exception | None = None
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                req = urllib.request.Request(url, headers={"X-ADMIN-API-KEY": self._key})
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    raise ApiAuthError(e.code) from None
+                if e.code == 404:
+                    if content:
+                        raise ApiNotFound() from None
+                    raise ApiAuthError(404) from None  # unknown product
+                if e.code >= 500:
+                    last = e
+                else:
+                    raise ApiError(f"HTTP {e.code} for {path}") from None
+            except urllib.error.URLError as e:
+                last = e
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(BACKOFF_SECS[attempt - 1])
+        raise ApiError(f"{path}: {last}")
 
-    def list_backups(self, *, instrument_serial=None, file_key=None, since=None, until=None):
-        """Yield every metadata row (paginates on limit/offset)."""
+    def list_backups(self, product: str, *, instrument_serial: str | None = None,
+                     since: str | None = None, until: str | None = None):
         offset = 0
         while True:
             payload = json.loads(
                 self._get(
-                    f"/api/v2/admin/products/{self.product}/backups",
+                    f"/api/v2/admin/products/{product}/backups",
                     {
                         "instrument_serial": instrument_serial,
-                        "file_key": file_key,
                         "since": since,
                         "until": until,
                         "limit": PAGE,
@@ -104,175 +190,570 @@ class Api:
                     },
                 )
             )
-            rows = payload.get("backups", payload if isinstance(payload, list) else [])
-            if not rows:
-                return
-            yield from rows
+            rows = payload.get("backups", []) if isinstance(payload, dict) else list(payload)
+            for row in rows:
+                yield row
             if len(rows) < PAGE:
                 return
             offset += PAGE
 
-    def download(self, backup_id: str) -> bytes:
-        return self._get(f"/api/v2/admin/products/{self.product}/backups/{backup_id}/content")
+    def download(self, product: str, backup_id: str) -> bytes:
+        return self._get(
+            f"/api/v2/admin/products/{product}/backups/{backup_id}/content", content=True
+        )
 
 
-# ------------------------------------------------------------------------- layout
+# --------------------------------------------------------------------------- layout
 
 
-def mirror_relpath(source_path: str, file_key: str) -> Path:
-    """Turn a Windows `source_path` into a restore-friendly relative path.
+def safe_segment(name: str) -> str:
+    """Filesystem-safe path segment for a serial / machine id (normally already clean)."""
+    return re.sub(r"[^A-Za-z0-9._@+-]", "_", name) or "unknown"
+
+
+def rel_path(source_path: str, file_key: str) -> PurePosixPath:
+    """Windows `source_path` -> restore-friendly relative path (drive stripped).
 
     `C:\\ProgramData\\PicoQuant\\Luminosa\\LastKnownGood.xml`
         -> ProgramData/PicoQuant/Luminosa/LastKnownGood.xml
-    Falls back to the (normalised) `file_key` if `source_path` is unusable.
+    Falls back to `file_key` split on '/' when `source_path` is unusable.
     """
     sp = (source_path or "").replace("\\", "/").strip()
-    sp = re.sub(r"^[A-Za-z]:/", "", sp)  # drop drive
-    sp = sp.lstrip("/")
+    sp = re.sub(r"^[A-Za-z]:/", "", sp).lstrip("/")
     parts = [p for p in sp.split("/") if p not in ("", ".", "..")]
-    if parts:
-        return Path(*parts)
-    return Path(*[p for p in file_key.split("/") if p not in ("", ".", "..")])
+    if not parts:
+        parts = [p for p in (file_key or "").split("/") if p not in ("", ".", "..")]
+    if not parts:
+        parts = ["_unknown"]
+    return PurePosixPath(*parts)
 
 
-def version_tag(row: dict) -> str:
-    ts = (row.get("received_at") or row.get("client_timestamp") or "unknown").replace(":", "-")
-    ts = ts.split(".")[0].rstrip("Z") + "Z"
-    sha8 = (row.get("content_sha256") or "0" * 8)[:8]
-    return f"{ts}_{sha8}"
+def version_filename(received_at: str, content_sha256: str) -> str:
+    ts = (received_at or "unknown").split(".")[0].replace(":", "-").rstrip("Z") + "Z"
+    sha8 = (content_sha256 or "0" * 8)[:8]
+    return f"{ts}__{sha8}.bak"
+
+
+# --------------------------------------------------------------------------- write
+
+
+FAILURE_DIGEST = "digest_mismatch"
+FAILURE_DOWNLOAD = "download_error"
+FAILURE_WRITE = "write_error"
+FAILURE_PRUNED = "pruned"
+
+
+@dataclass
+class Failure:
+    category: str
+    detail: str = ""
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".part")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+@dataclass
+class ManifestEntry:
+    id: str | None
+    file_key: str
+    source_path: str
+    rel_path: str
+    content_sha256: str
+    size_bytes: int
+    received_at: str
+    file_mtime: str | None
+    agent_version: str | None
+    version_file: str      # POSIX path relative to the machine folder
+    is_latest: bool
+    archived_utc: str
+
+    @staticmethod
+    def from_dict(d: dict) -> "ManifestEntry":
+        return ManifestEntry(
+            id=d.get("id"),
+            file_key=d.get("file_key", ""),
+            source_path=d.get("source_path", ""),
+            rel_path=d.get("rel_path", ""),
+            content_sha256=d.get("content_sha256", ""),
+            size_bytes=int(d.get("size_bytes", 0) or 0),
+            received_at=d.get("received_at", ""),
+            file_mtime=d.get("file_mtime"),
+            agent_version=d.get("agent_version"),
+            version_file=d.get("version_file", ""),
+            is_latest=bool(d.get("is_latest", False)),
+            archived_utc=d.get("archived_utc", ""),
+        )
+
+
+def commit_artifact(machine_dir: Path, rel: PurePosixPath, row: dict, data: bytes) -> ManifestEntry | Failure:
+    """Verify `data` against the row digest and file it under `_versions/`. Append-only."""
+    expected = row.get("content_sha256") or ""
+    got = hashlib.sha256(data).hexdigest()
+    if expected and got != expected:
+        return Failure(FAILURE_DIGEST, f"expected {expected[:8]}, got {got[:8]}")
+
+    vf = version_filename(row.get("received_at", ""), got)
+    version_rel = PurePosixPath("_versions", *rel.parts, vf)
+    vpath = machine_dir.joinpath(*version_rel.parts)
+    try:
+        if not vpath.exists():  # append-only: never overwrite an archived version
+            write_atomic(vpath, data)
+    except OSError as e:
+        return Failure(FAILURE_WRITE, str(e))
+
+    return ManifestEntry(
+        id=row.get("id"),
+        file_key=row.get("file_key", ""),
+        source_path=row.get("source_path", ""),
+        rel_path=str(rel),
+        content_sha256=got,
+        size_bytes=int(row.get("size_bytes", len(data)) or len(data)),
+        received_at=row.get("received_at", ""),
+        file_mtime=row.get("file_mtime"),
+        agent_version=row.get("agent_version"),
+        version_file=str(version_rel),
+        is_latest=False,
+        archived_utc=now_iso(),
+    )
+
+
+# --------------------------------------------------------------------------- manifest
+
+
+@dataclass
+class Manifest:
+    product: str
+    instrument_serial: str
+    machine_id: str
+    artifacts: list[ManifestEntry] = field(default_factory=list)
+    schema_version: int = SCHEMA_VERSION
+    updated_utc: str = ""
+
+    def ids(self) -> set[str]:
+        return {e.id for e in self.artifacts if e.id}
+
+
+def _manifest_path(machine_dir: Path) -> Path:
+    return machine_dir / "manifest.json"
+
+
+def load_manifest(machine_dir: Path, product: str, serial: str, machine_id: str) -> Manifest:
+    p = _manifest_path(machine_dir)
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if int(d.get("schema_version", 0)) == SCHEMA_VERSION:
+            return Manifest(
+                product=d.get("product", product),
+                instrument_serial=d.get("instrument_serial", serial),
+                machine_id=d.get("machine_id", machine_id),
+                artifacts=[ManifestEntry.from_dict(e) for e in d.get("artifacts", [])],
+                schema_version=SCHEMA_VERSION,
+                updated_utc=d.get("updated_utc", ""),
+            )
+        log(f"{p}: schema_version {d.get('schema_version')} != {SCHEMA_VERSION}; rebuilding from disk")
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as e:
+        log(f"{p}: unreadable ({e}); rebuilding from disk")
+    return rebuild_manifest_from_disk(machine_dir, product, serial, machine_id)
+
+
+def save_manifest(machine_dir: Path, m: Manifest) -> None:
+    m.updated_utc = now_iso()
+    body = json.dumps(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "product": m.product,
+            "instrument_serial": m.instrument_serial,
+            "machine_id": m.machine_id,
+            "updated_utc": m.updated_utc,
+            "artifacts": [dataclasses.asdict(e) for e in m.artifacts],
+        },
+        indent=2,
+    )
+    write_atomic(_manifest_path(machine_dir), body.encode("utf-8"))
+
+
+_VF_RE = re.compile(r"^(?P<ts>.+?)__(?P<sha8>[0-9a-f]{8})\.bak$")
+
+
+def rebuild_manifest_from_disk(machine_dir: Path, product: str, serial: str, machine_id: str) -> Manifest:
+    """Reconstruct a manifest from `_versions/**/*.bak` filenames (ids are unknown)."""
+    m = Manifest(product=product, instrument_serial=serial, machine_id=machine_id)
+    versions_root = machine_dir / "_versions"
+    if not versions_root.is_dir():
+        return m
+    newest: dict[str, str] = {}  # rel_path -> newest ts
+    for bak in versions_root.rglob("*.bak"):
+        mt = _VF_RE.match(bak.name)
+        if not mt:
+            continue
+        try:
+            if bak.stat().st_size < 0:  # touch it; unreadable -> skip
+                continue
+            bak.read_bytes()  # ensure readable
+        except OSError:
+            log(f"{bak}: unreadable; omitted from rebuild")
+            continue
+        rel = PurePosixPath(*bak.parent.relative_to(versions_root).parts)
+        rel_s = str(rel)
+        ts = mt.group("ts")
+        newest[rel_s] = max(newest.get(rel_s, ""), ts)
+        m.artifacts.append(
+            ManifestEntry(
+                id=None,
+                file_key="",
+                source_path="",
+                rel_path=rel_s,
+                content_sha256="",
+                size_bytes=bak.stat().st_size,
+                received_at=ts,
+                file_mtime=None,
+                agent_version=None,
+                version_file=str(PurePosixPath("_versions", *rel.parts, bak.name)),
+                is_latest=False,
+                archived_utc="",
+            )
+        )
+    for e in m.artifacts:
+        e.is_latest = newest.get(e.rel_path) == e.received_at
+    return m
+
+
+# --------------------------------------------------------------------------- lock
+
+
+LOCK_HELD = object()
+
+
+@dataclass
+class Lock:
+    path: Path
+
+
+def _pid_alive(pid) -> bool:
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return True  # unknown -> assume alive (safer: skip)
+    if os.name == "posix":
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+    return True  # Windows: cannot cheaply check -> assume alive
+
+
+def acquire_lock(root: Path):
+    root.mkdir(parents=True, exist_ok=True)
+    lp = root / ".fleet-backup.lock"
+    body = json.dumps(
+        {"pid": os.getpid(), "host": socket.gethostname(), "started_utc": now_iso()}
+    ).encode("utf-8")
+    try:
+        fd = os.open(lp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, body)
+        finally:
+            os.close(fd)
+        return Lock(lp)
+    except FileExistsError:
+        try:
+            info = json.loads(lp.read_text(encoding="utf-8"))
+            age = time.time() - lp.stat().st_mtime
+        except (OSError, ValueError):
+            info, age = {}, STALE_LOCK_SECS + 1
+        if age < STALE_LOCK_SECS and _pid_alive(info.get("pid")):
+            return LOCK_HELD
+        log(f"reclaiming stale lock (age {int(age)}s, pid {info.get('pid')})")
+        try:
+            lp.unlink()
+        except OSError:
+            return LOCK_HELD
+        return acquire_lock(root)
+
+
+def release_lock(lock) -> None:
+    if isinstance(lock, Lock):
+        try:
+            lock.path.unlink()
+        except OSError:
+            pass
+
+
+# --------------------------------------------------------------------------- report
+
+
+@dataclass
+class ProductResult:
+    product: str
+    accessible: bool = True
+    reason: str | None = None
+    sweep_failed: bool = False
+    machines_seen: int = 0
+    artifacts_added: int = 0
+    artifacts_failed: int = 0
+    pruned: int = 0
+
+
+@dataclass
+class RunReport:
+    products: list[ProductResult] = field(default_factory=list)
+    started_utc: str = ""
+    finished_utc: str = ""
+    fatal: bool = False
+    lock_held: bool = False
+
+    @property
+    def machines_seen(self) -> int:
+        return sum(p.machines_seen for p in self.products)
+
+    @property
+    def artifacts_added(self) -> int:
+        return sum(p.artifacts_added for p in self.products)
+
+    @property
+    def artifacts_failed(self) -> int:
+        return sum(p.artifacts_failed for p in self.products)
+
+    @property
+    def exit_code(self) -> int:
+        if self.fatal:
+            return 2
+        if self.lock_held:
+            return 0
+        # every product denied by auth (permanent misconfiguration) and none merely transient
+        auth_denied = [p for p in self.products if not p.accessible and not p.sweep_failed]
+        if self.products and len(auth_denied) == len(self.products):
+            return 2
+        if self.artifacts_failed > 0 or any(p.sweep_failed for p in self.products):
+            return 1
+        return 0
 
 
 # --------------------------------------------------------------------------- pull
 
 
-def sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def discover_and_group(api, products: list[str], serials: list[str],
+                       since: str | None, until: str | None):
+    groups: dict[tuple[str, str, str], list[dict]] = {}
+    results: dict[str, ProductResult] = {p: ProductResult(product=p) for p in products}
+    for product in products:
+        pr = results[product]
+        try:
+            rows: list[dict] = []
+            for s in (serials or [None]):
+                rows.extend(api.list_backups(product, instrument_serial=s, since=since, until=until))
+        except ApiAuthError as e:
+            pr.accessible = False
+            pr.reason = f"{e.code} — admin key has no access"
+            continue
+        except ApiError as e:
+            pr.accessible = False
+            pr.sweep_failed = True
+            pr.reason = f"list failed: {e}"
+            continue
+        for r in rows:
+            key = (
+                product,
+                r.get("instrument_serial") or "unknown",
+                r.get("machine_id") or "unknown",
+            )
+            groups.setdefault(key, []).append(r)
+    for key in groups:
+        groups[key].sort(key=lambda r: (r.get("file_key", ""), r.get("received_at", "")))
+    return groups, results
 
 
-def write_verified(dest: Path, data: bytes, expected_sha: str | None) -> None:
-    got = hashlib.sha256(data).hexdigest()
-    if expected_sha and got != expected_sha:
-        raise SystemExit(f"sha256 mismatch for {dest.name}: expected {expected_sha}, got {got}")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(dest)
+def pull_machine(api, product: str, serial: str, machine_id: str, rows: list[dict],
+                 out_root: Path, pr: ProductResult, *, rebuild: bool, quiet: bool) -> None:
+    machine_dir = out_root / product / safe_segment(serial) / safe_segment(machine_id)
+    if rebuild:
+        m = rebuild_manifest_from_disk(machine_dir, product, serial, machine_id)
+    else:
+        m = load_manifest(machine_dir, product, serial, machine_id)
+    known_ids = m.ids()
 
+    latest_by_key: dict[str, tuple[str, Path]] = {}  # file_key -> (received_at, bak path)
+    added_entries: list[ManifestEntry] = []
 
-def pull_serial(api: Api, serial: str, out_root: Path, *, all_versions: bool,
-                since: str | None, until: str | None) -> dict:
-    rows = sorted(
-        api.list_backups(instrument_serial=serial, since=since, until=until),
-        key=lambda r: r.get("received_at", ""),
-    )
-    serial_dir = out_root / api.product / safe(serial)
-    stats = {"serial": serial, "records": len(rows), "downloaded": 0, "skipped": 0, "files": 0}
-    if not rows:
-        print(f"  {serial}: no backups")
-        return stats
+    for row in rows:
+        file_key = row.get("file_key", "")
+        rel = rel_path(row.get("source_path", ""), file_key)
+        received_at = row.get("received_at", "")
+        rid = row.get("id")
 
-    # group by file_key; newest last (rows are ascending by received_at)
-    by_key: dict[str, list[dict]] = {}
-    for r in rows:
-        by_key.setdefault(r.get("file_key", "?"), []).append(r)
+        vf = version_filename(received_at, row.get("content_sha256", ""))
+        vpath = machine_dir.joinpath("_versions", *rel.parts, vf)
 
-    for file_key, versions in sorted(by_key.items()):
-        rel = mirror_relpath(versions[-1].get("source_path", ""), file_key)
-        latest = versions[-1]
-
-        # newest content at its mirrored path
-        dest = serial_dir / rel
-        if dest.is_file() and latest.get("content_sha256") and sha256_file(dest) == latest["content_sha256"]:
-            stats["skipped"] += 1
+        if rid and rid in known_ids:
+            action = "have"
+        elif vpath.exists():
+            action = "have"  # stale/rebuilt manifest but the bytes are on disk already
         else:
-            write_verified(dest, api.download(latest["id"]), latest.get("content_sha256"))
-            stats["downloaded"] += 1
-            print(f"  {serial}: {rel}  ({latest.get('size_bytes', '?')} B)")
-        stats["files"] += 1
-
-        # history
-        older = versions if all_versions else []
-        for r in older:
-            vdest = serial_dir / "_versions" / rel / f"{version_tag(r)}.bak"
-            if vdest.is_file() and r.get("content_sha256") and sha256_file(vdest) == r["content_sha256"]:
-                stats["skipped"] += 1
+            try:
+                data = api.download(product, rid)
+            except ApiNotFound:
+                pr.pruned += 1
+                _detail(quiet, f"~ {product}/{serial}/{machine_id}/{rel}  pruned (gone from backend)")
                 continue
-            write_verified(vdest, api.download(r["id"]), r.get("content_sha256"))
-            stats["downloaded"] += 1
+            except ApiError as e:
+                pr.artifacts_failed += 1
+                _detail(quiet, f"! {product}/{serial}/{machine_id}/{rel}  download_error ({e}) — not archived")
+                continue
+            result = commit_artifact(machine_dir, rel, row, data)
+            if isinstance(result, Failure):
+                pr.artifacts_failed += 1
+                _detail(quiet, f"! {product}/{serial}/{machine_id}/{rel}  {result.category} ({result.detail}) — not archived")
+                continue
+            added_entries.append(result)
+            pr.artifacts_added += 1
+            _detail(quiet, f"+ {product}/{serial}/{machine_id}/{rel}  ({received_at}, {result.size_bytes} B)")
+            action = "added"
 
-    manifest = serial_dir / "manifest.json"
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(
-        json.dumps({"serial": serial, "product": api.product, "backups": rows}, indent=2),
-        encoding="utf-8",
+        prev = latest_by_key.get(file_key)
+        if prev is None or received_at >= prev[0]:
+            latest_by_key[file_key] = (received_at, vpath)
+
+    # merge new entries; recompute is_latest per file_key across the whole manifest
+    by_id = {e.id: e for e in m.artifacts if e.id}
+    for e in added_entries:
+        if e.id and e.id in by_id:
+            continue
+        m.artifacts.append(e)
+        if e.id:
+            by_id[e.id] = e
+
+    newest_per_key: dict[str, str] = {}
+    for e in m.artifacts:
+        key = e.file_key or e.rel_path
+        newest_per_key[key] = max(newest_per_key.get(key, ""), e.received_at)
+    for e in m.artifacts:
+        e.is_latest = newest_per_key.get(e.file_key or e.rel_path) == e.received_at
+
+    # refresh each mirrored latest from its _versions/*.bak
+    for file_key, (_, bak) in latest_by_key.items():
+        if not bak.exists():
+            continue
+        rel = PurePosixPath(*bak.parent.relative_to(machine_dir / "_versions").parts)
+        mirror = machine_dir.joinpath(*rel.parts)
+        try:
+            data = bak.read_bytes()
+            if not mirror.exists() or mirror.read_bytes() != data:
+                write_atomic(mirror, data)
+        except OSError as e:
+            log(f"could not refresh mirrored latest {mirror}: {e}")
+
+    if added_entries or not _manifest_path(machine_dir).exists():
+        try:
+            save_manifest(machine_dir, m)
+        except OSError as e:
+            log(f"could not write {_manifest_path(machine_dir)}: {e}")
+
+
+def _detail(quiet: bool, line: str) -> None:
+    if not quiet:
+        print(line, file=sys.stderr)
+
+
+# --------------------------------------------------------------------------- output
+
+
+def print_summary(report: RunReport) -> None:
+    print(f"fleet-backup-pull  {report.started_utc} .. {report.finished_utc}")
+    for p in report.products:
+        if not p.accessible:
+            print(f"  {p.product:<9}: SKIPPED   ({p.reason})")
+        else:
+            print(
+                f"  {p.product:<9}: ok        machines={p.machines_seen}  "
+                f"added={p.artifacts_added}  failed={p.artifacts_failed}"
+                + (f"  pruned={p.pruned}" if p.pruned else "")
+            )
+    print(
+        f"totals: machines={report.machines_seen}  "
+        f"artifacts added={report.artifacts_added}  failed={report.artifacts_failed}"
     )
-    return stats
-
-
-def safe(name: str) -> str:
-    """A filesystem-safe folder name for a serial (they are normally clean already)."""
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name) or "unknown"
-
-
-def discover_serials(api: Api, since: str | None, until: str | None) -> list[str]:
-    seen: set[str] = set()
-    for r in api.list_backups(since=since, until=until):
-        s = r.get("instrument_serial")
-        if s:
-            seen.add(s)
-    return sorted(seen)
 
 
 # --------------------------------------------------------------------------- main
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("serials", nargs="*", help="instrument serial(s) to pull; omit with --all")
-    ap.add_argument("--all", action="store_true", help="discover and pull every instrument with backups")
-    ap.add_argument("--product", default="luminosa", choices=["luminosa", "solira"])
-    ap.add_argument("--out", default="fleet-backups", type=Path, help="output root (default: ./fleet-backups)")
-    ap.add_argument("--all-versions", action="store_true", help="also download historical versions, not just the newest")
-    ap.add_argument("--since", help="ISO date/time lower bound (received_at)")
-    ap.add_argument("--until", help="ISO date/time upper bound (received_at)")
-    ap.add_argument("--api", default=None, help=f"API base URL (default: $API_BASE_URL or {DEFAULT_API})")
-    ap.add_argument("--env", default=Path(".env"), type=Path, help="path to .env (default: ./.env)")
-    args = ap.parse_args(argv)
-
-    env = load_env(args.env)
-    admin_key = os.environ.get("EXPECTED_ADMIN_API_KEY") or env.get("EXPECTED_ADMIN_API_KEY")
-    if not admin_key:
-        print(f"error: EXPECTED_ADMIN_API_KEY not in {args.env} or the environment", file=sys.stderr)
-        return 2
-    base = args.api or os.environ.get("API_BASE_URL") or env.get("API_BASE_URL") or DEFAULT_API
-
-    api = Api(base, admin_key, args.product)
-
-    serials = list(args.serials)
-    if args.all:
-        print(f"discovering {args.product} instruments at {base} ...")
-        serials = sorted(set(serials) | set(discover_serials(api, args.since, args.until)))
-    if not serials:
-        print("nothing to do: give one or more serials, or --all", file=sys.stderr)
-        return 2
-
-    print(f"pulling {len(serials)} instrument(s) -> {args.out.resolve()}")
-    totals = {"downloaded": 0, "skipped": 0, "files": 0, "records": 0}
-    for s in serials:
-        st = pull_serial(api, s, args.out, all_versions=args.all_versions, since=args.since, until=args.until)
-        for k in totals:
-            totals[k] += st.get(k, 0)
-
-    print(
-        f"\ndone: {totals['files']} files across {len(serials)} instrument(s) "
-        f"({totals['downloaded']} downloaded, {totals['skipped']} up-to-date, "
-        f"{totals['records']} backup records)"
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    return 0
+    ap.add_argument("--out", default="fleet-backups", help="archive root (default: ./fleet-backups)")
+    ap.add_argument("--product", action="append", choices=list(PRODUCTS),
+                    help="restrict to one product (repeatable; default: all)")
+    ap.add_argument("--serial", action="append", help="restrict to one instrument serial (repeatable)")
+    ap.add_argument("--since", help="only artifacts with received_at >= this ISO time")
+    ap.add_argument("--until", help="only artifacts with received_at <= this ISO time")
+    ap.add_argument("--api", help=f"backend base URL (default: $API_BASE_URL or {DEFAULT_API})")
+    ap.add_argument("--env", default=Path(".env"), type=Path, help="file to read EXPECTED_ADMIN_API_KEY from")
+    ap.add_argument("--timeout", default=60, type=float, help="per-request HTTP timeout (s)")
+    ap.add_argument("--quiet", action="store_true", help="suppress per-artifact lines; still print the summary")
+    ap.add_argument("--rebuild-manifests", action="store_true",
+                    help="rebuild every touched manifest.json from _versions/ filenames first")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cfg = load_config(args)
+    report = RunReport(started_utc=now_iso())
+
+    if cfg.key_error:
+        log(cfg.key_error)
+        report.fatal = True
+    else:
+        try:
+            cfg.out.mkdir(parents=True, exist_ok=True)
+            probe = cfg.out / ".fleet-backup.wtest"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+        except OSError as e:
+            log(f"archive root not writable: {cfg.out} ({e})")
+            report.fatal = True
+
+    if not report.fatal:
+        lock = acquire_lock(cfg.out)
+        if lock is LOCK_HELD:
+            log("another run in progress; exiting")
+            report.lock_held = True
+        else:
+            try:
+                api = Api(cfg.api_base_url, cfg.admin_key, cfg.timeout)
+                groups, results = discover_and_group(
+                    api, cfg.products, cfg.serials, cfg.since, cfg.until
+                )
+                report.products = [results[p] for p in cfg.products]
+                for (product, serial, machine_id), rows in sorted(groups.items()):
+                    results[product].machines_seen += 1
+                    pull_machine(
+                        api, product, serial, machine_id, rows, cfg.out,
+                        results[product], rebuild=cfg.rebuild_manifests, quiet=cfg.quiet,
+                    )
+            finally:
+                release_lock(lock)
+
+    report.finished_utc = now_iso()
+    if report.fatal:
+        print("fleet-backup-pull: fatal — see message above", file=sys.stderr)
+    elif report.lock_held:
+        print(f"fleet-backup-pull  {report.started_utc}  another run in progress — nothing done")
+    else:
+        if not report.products:
+            report.products = [ProductResult(product=p) for p in cfg.products]
+        print_summary(report)
+    return report.exit_code
 
 
 if __name__ == "__main__":

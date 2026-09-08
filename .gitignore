@@ -25,9 +25,10 @@ settings.py
 /target
 **/*.rs.bk
 
-# fleet_backup_pull.py default output
+# fleet_backup_pull.py — archive output + its run lock
 /fleet-backups
 /backups
+**/.fleet-backup.lock
 
 # file change markers created by has_file_changed()
 *.lastcheck
