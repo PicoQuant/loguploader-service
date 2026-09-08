@@ -80,19 +80,24 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         shell: pwsh
         run: |
-          $suffixDash  = if ($env:CH -eq 'beta') { '-beta' } else { '' }
-          $suffixSpace = if ($env:CH -eq 'beta') { ' Beta' } else { '' }
+          $ErrorActionPreference = 'Stop'
+          $suffixDash = if ($env:CH -eq 'beta') { '-beta' } else { '' }
           $exe = "pquploader-$($env:PROD)$suffixDash.exe"
           Copy-Item "target/x86_64-pc-windows-msvc/release/pquploader.exe" $exe
 
-          $prodTitle = (Get-Culture).TextInfo.ToTitleCase($env:PROD)
           $iss = "installer/v2/$($env:PROD)$suffixDash.iss"
           $version = (Get-Content VERSION).Trim()
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) { choco install innosetup -y; }
-          & $iscc "/DMyAppVersion=$version" "/DMyBinary=..\..\$exe" $iss
+          $outDir = Join-Path $PWD 'Output'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-          $installer = Get-ChildItem Output -Filter "*Setup.exe" | Select-Object -First 1
+          $iscc = Get-ChildItem -Path 'C:\Program Files*\Inno Setup 6\ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = Get-ChildItem 'C:\Program Files*\Inno Setup 6\ISCC.exe' | Select-Object -First 1 }
+
+          & $iscc.FullName "/DMyAppVersion=$version" "/DMyBinary=..\..\$exe" "/O$outDir" $iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+          $installer = Get-ChildItem $outDir -Filter '*Setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw "no installer produced in $outDir" }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($installer.Name)" | Out-File "$($installer.FullName).sha256" -Encoding ascii -NoNewline
         env:
@@ -103,7 +108,11 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          # beta tag -> prerelease, never "Latest": the fielded v1 fleet updates from
+          # /releases/latest and must not see this (Constitution VI, staged rollout).
           prerelease: ${{ steps.tag.outputs.is_beta == 'true' }}
+          make_latest: ${{ steps.tag.outputs.is_beta == 'true' && 'false' || 'true' }}
+          fail_on_unmatched_files: true
           files: |
             pquploader-${{ matrix.product }}*.exe
             Output/*Setup.exe
