@@ -232,3 +232,20 @@ cargo test        # unit + integration (mock backend, no real network)
 ```
 
 End-to-end validation against the real backend is `specs/002-v2-config-backup-telemetry/quickstart.md`.
+
+## Pulling backups off the backend (maintenance)
+
+`tools/fleet_backup_pull.py` downloads stored config backups from `api.picoquant.com` to a
+local tree, one folder per instrument serial, using `EXPECTED_ADMIN_API_KEY` from `.env`.
+Stdlib only; sha256-verified; incremental on re-run.
+
+```
+python tools/fleet_backup_pull.py SN-12345 SN-67890          # named instruments, newest of each file
+python tools/fleet_backup_pull.py --all --out backups/2026-09-08   # whole Luminosa fleet
+python tools/fleet_backup_pull.py --all --all-versions       # + full version history under _versions/
+python tools/fleet_backup_pull.py --product solira --all --since 2026-09-01
+```
+
+Per serial you get the newest content mirrored from its original `source_path`
+(`<serial>/ProgramData/PicoQuant/Luminosa/…`) plus a `manifest.json` of every record — copy a
+serial's folder back onto the device to restore it.
