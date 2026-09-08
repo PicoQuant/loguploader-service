@@ -31,6 +31,7 @@ fn parts(body: &[u8]) -> Vec<String> {
 fn required_and_optional_parts_present() {
     let (body, ct) = build_submission(
         &identity(Serial::Known("SN-12345".into())),
+        "pqdevice_conf",
         std::path::Path::new(r"C:\Program Files\PicoQuant\Luminosa\PQDevice.conf"),
         &"6".repeat(64),
         b"the whole file",
@@ -66,6 +67,7 @@ fn required_and_optional_parts_present() {
 fn unknown_serial_travels_verbatim() {
     let (body, _) = build_submission(
         &identity(Serial::Unknown),
+        "settings/Settings.xml",
         std::path::Path::new(r"C:\ProgramData\PicoQuant\Luminosa\Settings.xml"),
         &"a".repeat(64),
         b"x",

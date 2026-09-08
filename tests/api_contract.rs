@@ -198,6 +198,7 @@ fn both_endpoints_always_carry_full_attribution() {
 
     let (body, ct) = pquploader::backup::build_submission(
         &id,
+        "pqdevice_conf",
         std::path::Path::new(r"C:\Program Files\PicoQuant\Luminosa\PQDevice.conf"),
         &"a".repeat(64),
         b"payload",
