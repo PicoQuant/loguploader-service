@@ -205,6 +205,14 @@ table: `machine_id`, `instrument_serial`, `current_version`, `channel`, `last_se
 after a stable release with no `upgrade_attempt` seen. Drives FR-022, FR-005e (beta-gate
 evaluation), and the User Story 3 rollout view.
 
+**Sibling tool** — `tools/fleet_backup_pull.py` (`specs/004-fleet-backup-restore`) is the
+companion maintainer command: same `EXPECTED_ADMIN_API_KEY`, same admin API host, but it
+queries the **backup** list instead of telemetry and archives every machine's config files
+locally. When `fleet-status.py` surfaces a `stuck` / `manual_required` machine, the operator
+runs `fleet_backup_pull.py --serial <SN>` to capture that machine's configuration before an
+on-site reinstall (and, once spec 004's restore increment lands, to put it back afterwards).
+The two tools are independent; neither blocks the other.
+
 ## D-manual. Manual-intervention list
 
 A checked-in `docs/manual-intervention.md` (or a small JSON the tool reads) listing machines

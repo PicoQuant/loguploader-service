@@ -12,7 +12,8 @@ uploading, and a failed upgrade rolls back to a working v1.
   PQ_CHANNEL=beta` build → `installer/v2/luminosa.iss` with `/DPQ_CHANNEL=beta`).
 - A GitHub prerelease you control to publish test v2 builds to (or point `update.ps1` at a
   fixture via an env override for local runs).
-- `EXPECTED_ADMIN_API_KEY` in `.env` for `tools/fleet-status.py`.
+- `EXPECTED_ADMIN_API_KEY` in `.env` for `tools/fleet-status.py` (the same key also drives
+  `tools/fleet_backup_pull.py`, the config-archive tool — `specs/004-fleet-backup-restore`).
 
 ## 1. Establish a real v1 machine
 

@@ -165,8 +165,12 @@ installer/
     └── (channel handled by ISCC /DPQ_CHANNEL=beta -> OutputBaseFilename "... Beta Setup")
 
 tools/
-└── fleet-status.py               # queries api.picoquant.com admin telemetry; pivots machines by
-                                  #   version / channel / last upgrade_attempt outcome (FR-022, FR-005e)
+├── fleet-status.py              # queries api.picoquant.com admin telemetry; pivots machines by
+│                                #   version / channel / last upgrade_attempt outcome (FR-022, FR-005e)
+└── fleet_backup_pull.py         # sibling maintainer tool — specs/004-fleet-backup-restore.
+                                 #   Same admin key + host, queries the BACKUP list; archives each
+                                 #   machine's config. Use it to capture a stuck/manual machine's
+                                 #   config before an on-site reinstall.
 
 docs/
 └── manual-upgrade-runbook.md     # FR-023b: move a no-working-updater machine to v2 by hand

@@ -149,7 +149,7 @@ installer `[Code]`, invoked by the *fixed* fielded `update.ps1`.
 
 **Independent Test**: quickstart §6 — VM with the AutoUpdate task deleted; confirm no change, `manual_required` in the view, runbook clears it.
 
-- [ ] T044 [P] [US5] `docs/manual-upgrade-runbook.md` — full procedure: how a machine lands here, RDP/on-site steps, `Setup.exe /VERYSILENT`, verify service + `AutoUpdate` task + `loguploaderservice.exe version`, then remove the entry from `docs/manual-intervention.json` (FR-023b).
+- [ ] T044 [P] [US5] `docs/manual-upgrade-runbook.md` — full procedure: how a machine lands here, **first archive its config with `python tools/fleet_backup_pull.py --serial <SN>` (`specs/004-fleet-backup-restore`)**, RDP/on-site steps, `Setup.exe /VERYSILENT`, verify service + `AutoUpdate` task + `loguploaderservice.exe version`, then remove the entry from `docs/manual-intervention.json` (FR-023b).
 - [ ] T045 [US5] `docs/manual-intervention.json` — document the entry shape (`machine_id` | `instrument_serial`, `reason`, `added_utc`, `cleared_utc?`) inline in the runbook; entries are hand-edited (no tool needed).
 - [ ] T046 [US5] `tools/fleet-status.py` — a `stuck` machine (v1, no `upgrade_attempt` after the window) is the **discovery signal**; document in the runbook that the operator investigates and, if it lacks a working updater, adds it to `manual-intervention.json` (FR-023, FR-023a).
 - [ ] T047 [P] [US5] Confirm no code path attempts an alternate unattended channel for these machines (FR-023) — assert in the updater tests that an absent/failed task means the updater simply never runs (there is no fallback trigger).
@@ -161,7 +161,7 @@ installer `[Code]`, invoked by the *fixed* fielded `update.ps1`.
 ## Phase 8: Polish & Cross-Cutting Concerns
 
 - [ ] T048 [P] `.github/workflows/release.yml` — **this task owns the file** (spec 002 T045 defers to it). Composition rules (research D12): `v*-beta.N` tag → `prerelease: true` + `-beta` matrix only; `v2.0.0` → **Luminosa assets only**; `v2.0.z` / `v2.y.*` → full `product × channel` matrix. Build ISCC per `(product, channel)` with `/DPQ_CHANNEL`; `cargo build --release` per `(product, channel)` with the env from spec 002 T036; publish installer + `.sha256` + service exe named per `contracts/installer-cli.md`; add the "no secret in `updater/`, `installer/`, `src/`" grep gate (spec 002 SC-006 + Constitution II).
-- [ ] T049 [P] `README.MD` — v2 auto-update section: channels, how a v1 machine migrates, `tools/fleet-status.py` usage, `--beta-gate`, updater log locations, link to the manual runbook (Constitution Dev Workflow).
+- [ ] T049 [P] `README.MD` — v2 auto-update section: channels, how a v1 machine migrates, `tools/fleet-status.py` usage, `--beta-gate`, updater log locations, link to the manual runbook (Constitution Dev Workflow). Cross-link the sibling `tools/fleet_backup_pull.py` (`specs/004-fleet-backup-restore`) — same admin key, config-archive companion.
 - [ ] T050 [P] Amend `specs/002-v2-config-backup-telemetry/contracts/cli.md` — Luminosa deployed identifiers are `loguploaderservice.exe` / `LumiLogUploadService` (kept for migration surface, research D4); Solira uses `pquploader-solira[-beta]` / `PQUploaderSolira`.
 - [ ] T051 `Invoke-Pester tests/updater/` all green; `pytest tests/tools/` all green.
 - [ ] T052 Run `quickstart.md` steps 1–6 on a real current-v1 Windows VM, including every failure-injection row; record outcomes (this is the Constitution VI "tested on a real Windows install" gate).

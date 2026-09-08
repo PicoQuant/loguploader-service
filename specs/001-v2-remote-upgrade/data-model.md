@@ -80,6 +80,11 @@ Two representations of the same event.
 Produced by `tools/fleet-status.py` from uploaded telemetry + the manual-intervention list.
 Not stored. Per machine:
 
+> Companion tool: `tools/fleet_backup_pull.py` (`specs/004-fleet-backup-restore`) — same admin
+> key, queries the backup list instead of telemetry, and archives each machine's config
+> locally. When this view shows `stuck` / `manual_required`, archive that machine first
+> (`--serial <SN>`).
+
 | Column | Source |
 |---|---|
 | `machine_id`, `instrument_serial` | any telemetry record |

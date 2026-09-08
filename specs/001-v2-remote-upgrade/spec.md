@@ -337,7 +337,9 @@ it onto v2.
   required", distinct from machines that attempted an unattended upgrade and failed.
 - **FR-023b**: A documented, repeatable manual runbook MUST exist that moves such a machine to
   v2 including installing v2's update mechanism, after which the machine upgrades unattended
-  like any other.
+  like any other. The runbook MUST direct the operator to first archive that machine's device
+  configuration with `tools/fleet_backup_pull.py --serial <SN>`
+  (`specs/004-fleet-backup-restore`) so a botched on-site reinstall does not lose config.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -425,6 +427,14 @@ it onto v2.
 - The existing recurring privileged task mechanism on fielded v1 machines.
 - The existing telemetry upload that carries per-machine version information.
 - Access to the upload destination for post-upgrade health verification.
+
+## Related (not a dependency)
+
+- **`specs/004-fleet-backup-restore`** — `tools/fleet_backup_pull.py`, a sibling maintainer
+  tool sharing `EXPECTED_ADMIN_API_KEY` and the admin API host. It archives each machine's
+  device configuration from the backend; the manual-intervention runbook (FR-023b) uses it to
+  capture a machine's config before an on-site reinstall. The two tools are independent —
+  neither blocks or is blocked by the other.
 
 ## Out of Scope
 
