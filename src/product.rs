@@ -61,7 +61,18 @@ impl Product {
 
     /// `<data_dir>\Logs\LastOpenSerial.txt` (FR-009a).
     pub fn serial_file(self) -> PathBuf {
-        self.data_dir().join("Logs").join("LastOpenSerial.txt")
+        self.logs_dir().join("LastOpenSerial.txt")
+    }
+
+    /// `<data_dir>\Logs\` — where `LastOpenSerial.txt` and the instrument's `*.pqlog` live.
+    pub fn logs_dir(self) -> PathBuf {
+        self.data_dir().join("Logs")
+    }
+
+    /// `<install_dir>\<Product>.exe` — the instrument control-software executable, read for
+    /// its file-version resource (FR-004a). Solira name is a working assumption (spec Open Items).
+    pub fn control_exe(self) -> PathBuf {
+        self.install_dir().join(format!("{}.exe", self.dir_name()))
     }
 
     /// The watched configuration-file set for this product (FR-008). Operational logs are

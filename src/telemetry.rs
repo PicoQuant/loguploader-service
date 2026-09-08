@@ -85,6 +85,10 @@ fn build_payload(
             "build": identity.os.build,
             "arch": identity.os.arch,
         },
+        "instrument_software": {
+            "version": identity.instrument_sw.version,
+            "log_version": identity.instrument_sw.log_version,
+        },
         "cycle": {
             "started_utc": crate::cycle::to_rfc3339(ctx.started),
             "duration_ms": ctx.duration_ms,
@@ -125,6 +129,7 @@ mod tests {
                 build: "19045".to_string(),
                 arch: "x86_64".to_string(),
             },
+            instrument_sw: Default::default(),
         }
     }
 
@@ -169,6 +174,29 @@ mod tests {
         assert_eq!(p["cycle"]["duration_ms"], 812);
         assert_eq!(p["last_failure_category"], "file_locked");
         assert_eq!(p["blocked_backups"][0]["reason"], "locked");
+        // instrument_software object always present; fields null when unknown (FR-004a)
+        assert!(p["instrument_software"].is_object());
+        assert!(p["instrument_software"]["version"].is_null());
+        assert!(p["instrument_software"]["log_version"].is_null());
+    }
+
+    #[test]
+    fn instrument_software_versions_serialize_when_known() {
+        let state = LocalBackupState::default();
+        let mut id = identity(Serial::Known("SN-1".into()));
+        id.instrument_sw = crate::identity::InstrumentSoftware {
+            version: Some("1.0.0.5415".into()),
+            log_version: Some("1.0.0.2094".into()),
+        };
+        let env = build_envelope(&cfg(), &id, &state, &ctx());
+        assert_eq!(
+            env["payload"]["instrument_software"]["version"],
+            "1.0.0.5415"
+        );
+        assert_eq!(
+            env["payload"]["instrument_software"]["log_version"],
+            "1.0.0.2094"
+        );
     }
 
     #[test]

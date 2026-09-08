@@ -112,6 +112,7 @@ Envelope: `measurement_type = "agent_status"`, `measured_at` = cycle-start RFC33
 | `channel` | enum `stable` \| `beta` | `PQ_CHANNEL`; feeds spec 001's promotion gate (FR-002f) |
 | `serial_source` | enum `file` \| `unknown` | FR-009a / US3 scenario 3 |
 | `os` | object `{ version, build, arch }` | from `GetVersionEx`/`RtlGetVersion` + arch |
+| `instrument_software` | object `{ version, log_version }` (each string \| null) | Luminosa/Solira version: `version` from `<install_dir>\<Product>.exe` file-version resource, `log_version` from the newest `*.pqlog` header (FR-004a) |
 | `cycle` | object `{ started_utc, duration_ms, ok }` | last cycle health (FR-002f) |
 | `last_failure_category` | `FailureCategory` \| null | most recent submission failure this cycle, or null (FR-002f, FR-027) |
 | `blocked_backups` | array of `{ file_key, reason }` | reason ∈ `locked` \| `absent` \| `too_large` \| `rejected` (FR-007) |

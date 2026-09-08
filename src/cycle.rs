@@ -144,12 +144,15 @@ pub fn run_once(cfg: &Config, identity: &Identity, state: &mut LocalBackupState)
     let clock = Instant::now();
 
     log::info!(
-        "cycle start — product={} channel={} version={} machine_id={} serial={} token_present={}",
+        "cycle start — product={} channel={} version={} machine_id={} serial={} \
+         instrument_sw={}/{} token_present={}",
         cfg.product.bucket(),
         cfg.channel.as_str(),
         crate::config::VERSION,
         identity.machine_id,
         identity.serial.wire_value(),
+        identity.instrument_sw.version.as_deref().unwrap_or("?"),
+        identity.instrument_sw.log_version.as_deref().unwrap_or("?"),
         logging::token_present(),
     );
 

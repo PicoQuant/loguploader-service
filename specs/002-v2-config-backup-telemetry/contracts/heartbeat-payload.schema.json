@@ -43,6 +43,23 @@
         "arch": { "type": "string", "enum": ["x86_64", "aarch64", "x86"] }
       }
     },
+    "instrument_software": {
+      "type": "object",
+      "description": "the instrument control-software (Luminosa / Solira) version, from two independent sources (FR-004a); each may be null",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": ["string", "null"],
+          "maxLength": 64,
+          "description": "file-version resource of <install_dir>\\<Product>.exe — the version installed now"
+        },
+        "log_version": {
+          "type": ["string", "null"],
+          "maxLength": 64,
+          "description": "version stamped in the header of the newest *.pqlog — the version that last ran"
+        }
+      }
+    },
     "cycle": {
       "type": "object",
       "required": ["started_utc", "duration_ms", "ok"],

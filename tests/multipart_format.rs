@@ -14,6 +14,7 @@ fn identity(serial: Serial) -> Identity {
             build: "19045".into(),
             arch: "x86_64".into(),
         },
+        instrument_sw: Default::default(),
     }
 }
 

@@ -67,6 +67,7 @@ fn failed_send_does_not_advance_the_day_but_dedup_200_does() {
             build: "19045".into(),
             arch: "x86_64".into(),
         },
+        instrument_sw: Default::default(),
     };
     let bucket = Product::current().bucket().to_string();
 

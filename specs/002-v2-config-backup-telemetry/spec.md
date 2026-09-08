@@ -280,8 +280,16 @@ lowest risk.
 - **FR-004**: The heartbeat MUST include at least: the instrument serial (or explicit unknown
   marker), the stable machine identifier, the v2 software version, the release channel
   (`stable` / `beta`), OS version/build/architecture, and a client UTC timestamp.
+- **FR-004a**: The heartbeat MUST also report the **instrument control-software version**
+  (Luminosa / Solira), from two independent sources, each nullable:
+  1. the file-version resource of `<install_dir>\<Product>.exe` — the version installed now;
+  2. the version stamped in the header line of the newest `*.pqlog` under `<data_dir>\Logs\` —
+     the version that last actually ran.
+  Reading one header line of a `.pqlog` for its version string is **not** log collection —
+  FR-001 (no operational-log upload) still holds; the log contents are never sent. Either
+  source being unreadable/absent yields `null` for that field and never fails the heartbeat.
 - **FR-005**: A maintainer MUST be able to determine, from backend queries alone, each
-  machine's last-seen time and current v2 version.
+  machine's last-seen time, current v2 version, and installed instrument-software version.
 - **FR-006**: If a heartbeat fails, the machine MUST retry next interval and MUST NOT crash or
   stop; no heartbeat backlog is required (latest state only).
 - **FR-007**: Any condition that blocked a backup this cycle (locked file, oversized file,
@@ -440,8 +448,9 @@ lowest risk.
 
 - **SC-001**: 100% of v2 machines with network access have a backend telemetry record no older
   than one cycle interval plus a small margin.
-- **SC-002**: A maintainer can determine any reporting machine's current version and last-seen
-  time from backend queries within 1 business day, without contacting the customer.
+- **SC-002**: A maintainer can determine any reporting machine's current agent version, its
+  installed instrument-software version (Luminosa / Solira), and last-seen time from backend
+  queries within 1 business day, without contacting the customer.
 - **SC-003**: For a watched file that changes on a given UTC day, exactly one backup of that
   file reaches the backend that day — not zero, not more.
 - **SC-004**: For a watched file that does not change, zero backup submissions occur.

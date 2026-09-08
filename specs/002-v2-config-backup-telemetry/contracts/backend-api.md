@@ -25,6 +25,7 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
     "channel": "stable",
     "serial_source": "file",
     "os": { "version": "10.0.19045", "build": "19045", "arch": "x86_64" },
+    "instrument_software": { "version": "1.0.0.5415", "log_version": "1.0.0.2094" },
     "cycle": { "started_utc": "2026-09-08T08:17:10Z", "duration_ms": 812, "ok": true },
     "last_failure_category": null,
     "blocked_backups": [

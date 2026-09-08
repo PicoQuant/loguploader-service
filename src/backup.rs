@@ -291,6 +291,7 @@ mod tests {
                 build: "19045".to_string(),
                 arch: "x86_64".to_string(),
             },
+            instrument_sw: Default::default(),
         }
     }
 

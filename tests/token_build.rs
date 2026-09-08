@@ -50,6 +50,7 @@ fn agent_sends_the_verbatim_compiled_token_as_x_telemetry_token() {
             build: "0".into(),
             arch: "x86_64".into(),
         },
+        instrument_sw: Default::default(),
     };
     let ctx = pquploader::cycle::CycleContext {
         started: pquploader::cycle::now_utc(),
