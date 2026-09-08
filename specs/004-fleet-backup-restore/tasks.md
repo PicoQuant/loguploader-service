@@ -66,16 +66,16 @@ backend backup the archive holds → the archived copy stays, run still succeeds
 
 ### Tests for User Story 1 (`tools/test_fleet_backup_pull.py`)
 
-- [ ] T014 [P] [US1] `test_incremental_skip_by_manifest_id`: a row whose `id` is already a `ManifestEntry` → 0 `Api.download` calls, no file/manifest write (SC-002, SC-003).
-- [ ] T015 [P] [US1] `test_rel_path_derivation`: `C:\ProgramData\PicoQuant\Luminosa\LastKnownGood.xml` → `ProgramData/PicoQuant/Luminosa/LastKnownGood.xml`; drive-less, `..`-containing, and empty/garbage `source_path` → `file_key` fallback.
-- [ ] T016 [P] [US1] `test_commit_artifact`: good bytes → `_versions/<rel>/<name>.bak` written, no `.part` left, `ManifestEntry` returned; bad bytes → nothing written, `Failure(digest_mismatch)`; pre-existing `.bak` → not overwritten.
-- [ ] T017 [P] [US1] `test_manifest_roundtrip_and_rebuild`: `save`→`load` equal; a corrupt file, a `schema_version: 2` file, and a missing file each → rebuilt from `_versions/` filenames; an unreadable `.bak` is dropped from the rebuild.
-- [ ] T018 [P] [US1] `test_lock`: fresh lock present → `acquire_lock` returns `LOCK_HELD` and `main()` exits 0 writing nothing; a lock older than `STALE_LOCK_SECS` → reclaimed with a warning.
-- [ ] T019 [P] [US1] `test_product_inaccessible`: `FakeApi` raises `ApiAuthError` for `solira` → `solira` `SKIPPED`, `luminosa` still archived, exit 0; both raise → exit 2 (FR-004).
-- [ ] T020 [P] [US1] `test_paging`: `FakeApi` serves 2 full pages + a short page → every row processed exactly once.
-- [ ] T021 [P] [US1] `test_append_only`: given a manifest that already holds the newest version, a run that re-lists an older version it also holds does not rewrite or delete any `_versions/` file (FR-007, SC-001).
-- [ ] T022 [P] [US1] `test_admin_key_redaction`: run end-to-end against `FakeApi` with a sentinel admin key; capture stdout + stderr + the bytes of every file the run wrote; assert the sentinel appears in none of them (SC-006).
-- [ ] T023 [P] [US1] `test_exit_codes`: nothing new → 0; one injected `download_error` → 1; no product reachable → 2; a `pruned`-only run → 0.
+- [ ] T014 [P] [US1] `tools/test_fleet_backup_pull.py::test_incremental_skip_by_manifest_id`: a row whose `id` is already a `ManifestEntry` → 0 `Api.download` calls, no file/manifest write (SC-002, SC-003).
+- [ ] T015 [P] [US1] `tools/test_fleet_backup_pull.py::test_rel_path_derivation`: `C:\ProgramData\PicoQuant\Luminosa\LastKnownGood.xml` → `ProgramData/PicoQuant/Luminosa/LastKnownGood.xml`; drive-less, `..`-containing, and empty/garbage `source_path` → `file_key` fallback.
+- [ ] T016 [P] [US1] `tools/test_fleet_backup_pull.py::test_commit_artifact`: good bytes → `_versions/<rel>/<name>.bak` written, no `.part` left, `ManifestEntry` returned; bad bytes → nothing written, `Failure(digest_mismatch)`; pre-existing `.bak` → not overwritten.
+- [ ] T017 [P] [US1] `tools/test_fleet_backup_pull.py::test_manifest_roundtrip_and_rebuild`: `save`→`load` equal; a corrupt file, a `schema_version: 2` file, and a missing file each → rebuilt from `_versions/` filenames; an unreadable `.bak` is dropped from the rebuild.
+- [ ] T018 [P] [US1] `tools/test_fleet_backup_pull.py::test_lock`: fresh lock present → `acquire_lock` returns `LOCK_HELD` and `main()` exits 0 writing nothing; a lock older than `STALE_LOCK_SECS` → reclaimed with a warning.
+- [ ] T019 [P] [US1] `tools/test_fleet_backup_pull.py::test_product_inaccessible`: `FakeApi` raises `ApiAuthError` for `solira` → `solira` `SKIPPED`, `luminosa` still archived, exit 0; both raise → exit 2 (FR-004).
+- [ ] T020 [P] [US1] `tools/test_fleet_backup_pull.py::test_paging`: `FakeApi` serves 2 full pages + a short page → every row processed exactly once.
+- [ ] T021 [P] [US1] `tools/test_fleet_backup_pull.py::test_append_only`: given a manifest that already holds the newest version, a run that re-lists an older version it also holds does not rewrite or delete any `_versions/` file (FR-007, SC-001).
+- [ ] T022 [P] [US1] `tools/test_fleet_backup_pull.py::test_admin_key_redaction`: run end-to-end against `FakeApi` with a sentinel admin key; capture stdout + stderr + the bytes of every file the run wrote; assert the sentinel appears in none of them (SC-006).
+- [ ] T023 [P] [US1] `tools/test_fleet_backup_pull.py::test_exit_codes`: nothing new → 0; one injected `download_error` → 1; no product reachable → 2; a `pruned`-only run → 0.
 
 ### Implementation for User Story 1 (`tools/fleet_backup_pull.py`)
 
