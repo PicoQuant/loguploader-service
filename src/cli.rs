@@ -23,10 +23,11 @@ COMMANDS:
 ";
 
 pub fn run(args: Vec<String>) -> ExitCode {
-    let cmd = args.first().map(String::as_str).unwrap_or("run");
-    let rest: Vec<String> = args.into_iter().skip(1).collect();
+    let mut it = args.into_iter();
+    let cmd = it.next().unwrap_or_else(|| "run".to_string());
+    let rest: Vec<String> = it.collect();
 
-    match cmd {
+    match cmd.as_str() {
         "run" => dispatch_run(),
         "debug" => run_loop::run_foreground(),
         "once" => cycle::run_once_cli(),

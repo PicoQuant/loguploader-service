@@ -41,7 +41,7 @@ pub fn init(to_stderr: bool) {
     }
 
     #[cfg(windows)]
-    let event_sink = eventlog::EventLog::new(&event_source_name())
+    let event_sink = eventlog::EventLog::new(&event_source_name(), Level::Info)
         .map_err(|e| eprintln!("warning: Event Log source unavailable ({e})"))
         .ok();
     #[cfg(not(windows))]

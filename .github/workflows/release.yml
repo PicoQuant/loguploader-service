@@ -51,15 +51,28 @@ jobs:
             echo "is_beta=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # a stable tag builds only stable artifacts; a beta tag builds only beta artifacts
-      - name: Skip mismatched channel
+      # Build a (product, channel) row only when: its channel matches the tag kind AND the
+      # product's fleet-token secret is configured (an unset token would hard-fail the
+      # release build by design — FR-024).
+      - name: Gate this matrix row
         id: gate
         shell: bash
+        env:
+          TOK_LUMINOSA: ${{ secrets.TELEMETRY_FLEET_TOKENS_LUMINOSA }}
+          TOK_SOLIRA: ${{ secrets.TELEMETRY_FLEET_TOKENS_SOLIRA }}
         run: |
           want_beta='${{ steps.tag.outputs.is_beta }}'
           have_beta=$([[ '${{ matrix.channel }}' == 'beta' ]] && echo true || echo false)
-          if [[ "$want_beta" == "$have_beta" ]]; then echo "go=true" >> "$GITHUB_OUTPUT";
-          else echo "go=false" >> "$GITHUB_OUTPUT"; fi
+          case '${{ matrix.product }}' in
+            luminosa) tok="$TOK_LUMINOSA" ;;
+            solira)   tok="$TOK_SOLIRA" ;;
+          esac
+          if [[ "$want_beta" == "$have_beta" && -n "$tok" ]]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            [[ -z "$tok" ]] && echo "::notice::skipping ${{ matrix.product }} — TELEMETRY_FLEET_TOKENS_$(echo ${{ matrix.product }} | tr a-z A-Z) not set"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Rust
         if: steps.gate.outputs.go == 'true'
