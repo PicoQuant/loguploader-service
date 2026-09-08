@@ -49,6 +49,9 @@ scratchpad `test_submission.sh`).
 
 **Project Type**: single project — one Rust binary crate at the repository root. v1's Python
 files remain in the tree until `specs/001-v2-remote-upgrade` completes the fleet migration.
+CI builds a **product × channel matrix** — `luminosa`, `luminosa`-beta, `solira`,
+`solira`-beta — each with its bucket, token, and channel (`stable`/`beta`) compiled in
+(FR-002b, FR-002e). Channel-aware self-update is owned by spec 001.
 
 **Performance Goals**: not performance-sensitive. One cycle every 30 min (default,
 configurable). A cycle does ≤ ~10 small file reads + hashes and 1–5 HTTPS POSTs; must finish
@@ -65,43 +68,45 @@ no secret in source or git history; local state survives reboot and v2 self-upda
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Constitution v1.1.0. Result: **CONDITIONAL — 1 blocking item requires a constitution
-amendment before `/speckit-tasks`.**
+Constitution v1.3.0 (Principle V amended for a compiled binary; Build section adds the
+staged-rollout mandate). Result: **PASS.**
 
 | Principle | Assessment |
 |---|---|
 | I. Never Crash the Service Loop | **PASS (by design).** `cycle::run_once` returns `Result`; the service loop logs and continues on `Err`, with a `catch_unwind` backstop around the cycle body. All network/file/registry calls return typed errors; bounded retry + backoff in `api`. (FR-029, FR-006) |
 | II. Single Source of Truth for Version & Config | **PASS.** `VERSION` stays authoritative; `build.rs` reads it and stamps the binary + Windows version resource + installer. Fleet token injected only at build from the `TELEMETRY_FLEET_TOKENS_<PRODUCT>` CI secret, never committed (FR-023/024). One runtime config resolution path: compiled default → `config.toml` next to the exe → documented default. |
 | III. Non-Destructive Local File Handling | **PASS (strengthened).** v2 never deletes or writes instrument files — it only reads watched files, skipping locked/absent ones (FR-013). No zip staging, no retention cleanup. The principle's letter (zip retention, delete-after-upload) no longer applies; its intent (never lose instrument data) is fully met. |
-| IV. Observable by Default | **PASS with note.** Every cycle logs to the Windows Event Log: product, instrument serial, machine id, per-file outcome, failure category (FR-030). **Note:** v1's literal `Uploaded:` success-string contract does not carry to v2; machine-detectable outcome markers move into structured `cycles.log` lines and the backend heartbeat (FR-005, FR-007). Fold into the amendment. |
-| V. Minimal Dependencies, Self-Contained Delivery | **BLOCKING VIOLATION (letter).** Principle V mandates *"a single self-contained PyInstaller EXE"* and Python. v2 is a Rust binary. This meets the principle's **intent better** (no interpreter, smaller, faster start, harder to tamper) but contradicts its wording and the Build section's PyInstaller workflow. **Requires a constitution amendment** (see Complexity Tracking + Next Actions). Dependency count stays small; each crate is justified in `research.md`. |
-| VI. Remote Upgradeability Is Non-Negotiable | **PASS (delegated + constrained).** Delivery is `specs/001-v2-remote-upgrade`. This plan's obligations: (a) v2 release artifacts keep names/behaviour the v1 updater consumes (installer `*Setup*.exe` + `.sha256`, `/VERYSILENT`); (b) `state.json` lives outside the install dir so a self-update preserves it (FR-034); (c) per-product builds so a machine is never upgraded to the wrong product (FR-002c). |
+| IV. Observable by Default | **PASS.** Every cycle logs to the Windows Event Log: product, instrument serial, machine id, per-file outcome, failure category (FR-030). v1's literal `Uploaded:` string contract is superseded (constitution v1.2.0) by structured `cycles.log` lines + the backend heartbeat (FR-005, FR-007). |
+| V. Minimal Dependencies, Self-Contained Delivery | **PASS** (constitution v1.2.0 generalized this to "single self-contained executable, compiled build preferred"). v2 is a Rust binary; dependency count stays small; each crate justified in `research.md`. |
+| VI. Remote Upgradeability Is Non-Negotiable | **PASS (delegated + constrained).** Delivery is `specs/001-v2-remote-upgrade`. This plan's obligations: (a) v2 release artifacts keep names/behaviour the v1 updater consumes (installer `*Setup*.exe` + `.sha256`, `/VERYSILENT`); (b) `state.json` lives outside the install dir so a self-update preserves it (FR-034); (c) per-product **and per-channel** builds so a machine is never upgraded to the wrong product or across channels (FR-002c, FR-002e); (d) the heartbeat carries the channel so spec 001's beta→stable promotion gate is measurable (FR-002f, constitution v1.3.0 Build section). |
 
-**Build, Release & Distribution section** — also needs amending alongside Principle V:
-- workflow tooling (PyInstaller → `cargo build`), still per the same `.github/workflows` files
-- `client_version.json` "idempotent per day per machine" → superseded by the per-interval
-  heartbeat (FR-003); the daily-once idempotency now applies to **config backups** (FR-011)
-- installer still registers the AutoUpdate scheduled task and ships `updater/update.ps1`
-  (unchanged, owned by spec 001)
+**Build, Release & Distribution section** (constitution v1.2.0 + v1.3.0) — satisfied by:
+- workflow tooling `cargo build` per the same `.github/workflows` files
+- per-interval heartbeat supersedes `client_version.json`; daily-once now governs config
+  backups (FR-011)
+- installer registers the AutoUpdate scheduled task and ships `updater/update.ps1` (spec 001)
+- **staged rollout**: `stable`/`beta` compiled in, product × channel matrix, beta = GitHub
+  prerelease; the beta→stable promotion gate (≥7 days / ≥3 beta instruments / 0 Sev-1) is
+  owned by `specs/001-v2-remote-upgrade`, and this plan feeds it by putting the channel in
+  every heartbeat (FR-002e, FR-002f)
 
-**Gate outcome**: proceed to Phase 0/1 design (language-agnostic parts are unaffected).
-`/speckit-tasks` and `/speckit-implement` are **blocked** until `/speckit-constitution`
-amends Principle V + the Build section (MINOR bump — guidance updated, no principle removed).
+**Gate outcome**: **PASS** — proceed. `/speckit-tasks` is unblocked (constitution amended to
+v1.3.0).
 
 ### Post-Design Constitution Re-check (after Phase 1)
 
-No new violations introduced by the design. Confirmations:
+No violations. Confirmations:
 - **I** — `run_loop.rs` (catch_unwind + log-and-continue) and `error.rs` categories keep the
   loop alive on every failure path in `data-model.md`.
 - **II** — `state.json` schema and `config.toml` keep one resolution path; `build.rs` is the
-  only place the token/version enter, from CI secrets.
+  only place the token/version/channel enter, from CI.
 - **III** — the design reads watched files only; `ResolvedWatchedFile` has no delete path.
 - **IV** — `CycleRecord` → Event Log + `cycles.log`; `blocked_backups` surfaces conditions in
   the heartbeat.
+- **V** — Rust binary; small justified dependency set (`research.md`).
 - **VI** — `state.json` under `%ProgramData%` (not the install dir); CLI `install/uninstall`
-  contract matches v1's verbs for the updater; per-product artifacts.
-- **V** — still the one blocking item; unchanged by design. Amendment required before
-  `/speckit-tasks`.
+  matches v1's verbs; per-product **and per-channel** artifacts; channel in every heartbeat
+  for the promotion gate.
 
 ## Project Structure
 
@@ -118,16 +123,16 @@ specs/002-v2-config-backup-telemetry/
 │   ├── backend-api.md
 │   ├── heartbeat-payload.schema.json
 │   └── local-state.schema.json
-└── tasks.md             # /speckit-tasks output (NOT created here; blocked on amendment)
+└── tasks.md             # /speckit-tasks output
 ```
 
 ### Source Code (repository root)
 
 ```text
 Cargo.toml                     # crate manifest, pinned MSRV, minimal deps
-build.rs                       # reads VERSION + PQ_PRODUCT + TELEMETRY_FLEET_TOKENS_<PRODUCT>
-                               #   env -> cargo:rustc-env for compile-time constants;
-                               #   emits Windows version resource
+build.rs                       # reads VERSION + PQ_PRODUCT + PQ_CHANNEL +
+                               #   TELEMETRY_FLEET_TOKENS_<PRODUCT> env -> cargo:rustc-env
+                               #   compile-time constants; emits Windows version resource
 src/
 ├── main.rs                    # arg parsing: run | debug | install | uninstall | once
 ├── service.rs                 # windows-service handler: start/stop, status, dispatch to loop
@@ -148,28 +153,34 @@ tests/
 ├── change_detection.rs
 ├── daily_limit_utc.rs
 ├── failure_categories.rs
-├── product_resolution.rs
+├── build_identity.rs         # product + channel resolution
 ├── multipart_format.rs
+├── state_persistence.rs
 └── api_contract.rs            # against mockito
 
 installer/
 └── v2/                        # per-product Inno Setup scripts (owned jointly with spec 001)
 
 .github/workflows/
-├── windows-build.yml          # rewritten: matrix over [luminosa, solira], cargo build, per-product token secret
-└── release.yml                # rewritten: same matrix; publishes installer + .sha256 + exe with v1-compatible asset names
+├── windows-build.yml          # rewritten: matrix [luminosa,solira] x [stable,beta], cargo build, per-product token secret
+└── release.yml                # rewritten: same matrix; beta tag (vX.Y.Z-beta.N) -> prerelease; stable tag -> release;
+                               #   publishes installer + .sha256 + exe per (product,channel) with v1-compatible names
 ```
 
 **Structure Decision**: Single Rust binary crate at the repository root (not a workspace —
 scope doesn't warrant it). v1 Python files stay put until `specs/001-v2-remote-upgrade`
-retires them. Per-product differences (bucket, token, file paths) are **compile-time**
-constants from `build.rs` plus a small per-product table in `product.rs`; there is exactly one
-`.exe` per product, so nothing selects product at runtime.
+retires them. Per-build differences (product bucket, token, watched-file paths, channel) are
+**compile-time** constants from `build.rs` plus small per-product / per-channel tables in
+`product.rs`; there is exactly one `.exe` per (product, channel), so nothing selects product
+or channel at runtime.
 
 ## Complexity Tracking
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| Principle V: Rust binary instead of "PyInstaller EXE" + Python | The user has chosen a compiled single-binary service. A native binary removes the bundled interpreter, cuts artifact size and cold-start time, shrinks the CVE surface on rarely-patched customer machines, and is harder to tamper with — all of which serve Principle V's stated *intent*. | Staying on Python + PyInstaller keeps the letter but keeps every downside the principle exists to limit (a frozen interpreter that breaks on OS changes, a large `_MEI` unpack, `win32*` runtime pulls). The mismatch is with the principle's wording, not its purpose — so the fix is a MINOR constitution amendment, not a worse implementation. |
-| Build section: `cargo` build + matrix workflow instead of the PyInstaller/Inno step | Follows directly from the language change; same `.github/workflows` files, same release artifacts and asset names. | n/a — mechanical consequence of the above. |
-| Build section: per-interval heartbeat replaces `client_version.json` "idempotent per day" | Fleet "last-seen"/liveness (FR-003, FR-005, SC-001) needs a heartbeat more often than daily; "alive" must be distinguishable from "stopped". Daily-once idempotency moves to config backups (FR-011), which is where it still matters. | A once-a-day heartbeat cannot tell a healthy machine from one that died 20 hours ago — defeats the primary purpose of v2. |
+*Constitution Check passes at v1.3.0 — no unjustified violations.* The decisions that drove
+the v1.2.0 / v1.3.0 amendments, for the record:
+
+| Decision | Why | Simpler alternative rejected because |
+|---|---|---|
+| Rust binary (not PyInstaller + Python) — constitution v1.2.0 | Native single binary removes the bundled interpreter, cuts size and cold-start, shrinks the CVE surface on rarely-patched machines, is harder to tamper with — serving Principle V's *intent*. | Python + PyInstaller keeps every downside the principle exists to limit (frozen interpreter, large `_MEI` unpack, `win32*` pulls). |
+| Per-interval heartbeat replaces `client_version.json` daily idempotency — v1.2.0 | Fleet "last-seen"/liveness (FR-003, FR-005, SC-001) needs sub-daily cadence. Daily-once moves to config backups (FR-011). | A once-a-day heartbeat cannot tell a healthy machine from one dead 20 h. |
+| Channel compiled into the build; product × channel matrix — v1.3.0 | A beta build must be physically incapable of pulling a stable release and vice versa; no config/backend drift. Staged rollout gates every fleet-wide push behind a real-machine beta (Principle VI). | Config-file channel could be edited or lost; backend-assigned cohort needs backend work and softens "device→backend only". |

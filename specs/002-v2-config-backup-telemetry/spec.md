@@ -26,6 +26,9 @@ public-share folder. Version 2 has a narrower purpose and an authenticated trans
   successful backup, and at most once per calendar day (UTC).
 - **Two products, initially**: the same v2 service runs on **Luminosa** and **Solira**
   instruments. Each submission is tagged with the product bucket (`luminosa` or `solira`).
+- **Two release channels**: every build is `stable` or `beta`, compiled in. CI produces a
+  separate artifact per product per channel. The agent reports its channel in the heartbeat so
+  the beta cohort is visible; channel-aware self-update is owned by `specs/001-v2-remote-upgrade`.
 - **Transport** is `https://api.picoquant.com`, authenticated with a fleet-wide token
   (`X-TELEMETRY-TOKEN`) per product.
 - Platform scope is **Windows only**. v2 runs as an unattended Windows service.
@@ -263,14 +266,20 @@ lowest risk.
   different product than the instrument it serves.
 - **FR-002d**: Every submission MUST be tagged with the build's product bucket
   (`luminosa` / `solira`).
+- **FR-002e**: Each build MUST also carry a compiled-in **release channel** (`stable` /
+  `beta`). CI produces a separate artifact per product per channel (4 builds initially). The
+  channel MUST NOT be switchable at runtime, via config, or from the backend.
+- **FR-002f**: The heartbeat MUST report the build's channel so a maintainer can identify the
+  beta cohort and watch its health (the beta-to-stable promotion gate lives in
+  `specs/001-v2-remote-upgrade`).
 
 #### Telemetry heartbeat
 
 - **FR-003**: Each machine MUST submit a heartbeat telemetry record on a recurring interval,
   including when nothing has changed.
 - **FR-004**: The heartbeat MUST include at least: the instrument serial (or explicit unknown
-  marker), the stable machine identifier, the v2 software version, OS version/build/
-  architecture, and a client UTC timestamp.
+  marker), the stable machine identifier, the v2 software version, the release channel
+  (`stable` / `beta`), OS version/build/architecture, and a client UTC timestamp.
 - **FR-005**: A maintainer MUST be able to determine, from backend queries alone, each
   machine's last-seen time and current v2 version.
 - **FR-006**: If a heartbeat fails, the machine MUST retry next interval and MUST NOT crash or
@@ -355,11 +364,12 @@ lowest risk.
 - **FR-024**: Each product's fleet token MUST be injected into that product's build at build
   time from a **GitHub Actions secret** named the same as the backend variable —
   `TELEMETRY_FLEET_TOKENS_LUMINOSA`, `TELEMETRY_FLEET_TOKENS_SOLIRA` — following the pattern v1
-  uses for `PUBLIC_LINK`: the release workflow builds once per product and passes only that
-  product's value. Locally the value is read from a gitignored `.env` (see `.env.example`).
-  The build carries exactly one token; if the value contains a comma-separated list, v2 uses
-  the first entry. The exact in-binary injection mechanism is a planning decision
-  (`/speckit-plan`).
+  uses for `PUBLIC_LINK`. The release workflow builds a **product × channel matrix**
+  (`luminosa`, `luminosa`-beta, `solira`, `solira`-beta) and passes each build only its
+  product's token and its channel. Locally the token is read from a gitignored `.env` (see
+  `.env.example`). The build carries exactly one token; if the value contains a
+  comma-separated list, v2 uses the first entry. The same token serves both channels of a
+  product. The exact in-binary injection mechanism is a planning decision (`/speckit-plan`).
 - **FR-024a**: The fleet token is understood to be extractable from a distributed binary; it
   is a *keep-out-of-source* secret, not a confidential one. Its exposure is bounded (write-only
   to one product's bucket) and handled by rotation (FR-025), not by obfuscation.
@@ -414,7 +424,10 @@ lowest risk.
   categorized outcomes.
 - **Product Identity**: the fixed product (`luminosa` / `solira`) an installation belongs to;
   selects the watched-file set, the product bucket on every submission, and which fleet token
-  the build carries.
+  the build carries. Compiled in; no runtime switch.
+- **Release Channel**: the fixed channel (`stable` / `beta`) a build belongs to; compiled in;
+  reported in every heartbeat; determines which releases the machine self-updates from
+  (`specs/001-v2-remote-upgrade`). No runtime switch.
 - **Fleet Token**: a product's `X-TELEMETRY-TOKEN`, identical on every machine of that
   product, non-expiring, injected at build from a secret, rotatable via the accept-two-values
   transition.
@@ -441,6 +454,9 @@ lowest risk.
   a human touching it (the non-expiring token makes this the expected steady state).
 - **SC-008a**: Every Luminosa machine reports to the `luminosa` bucket and every Solira
   machine to the `solira` bucket — 0 cross-tagged submissions.
+- **SC-008b**: Every heartbeat carries the build's channel; a maintainer can list the beta
+  cohort and its per-machine health from telemetry alone (feeds the promotion gate in
+  `specs/001-v2-remote-upgrade`).
 - **SC-009**: A transient backend outage of up to 24 hours results in no lost heartbeat state
   and no lost backup of a changed file once connectivity returns.
 - **SC-010**: The service sustains continuous unattended operation across reboots and

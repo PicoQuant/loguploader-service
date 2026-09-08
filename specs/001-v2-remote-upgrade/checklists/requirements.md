@@ -43,3 +43,10 @@
      Encoded in FR-014, FR-014a (idempotent), FR-014b (missing/partial handling),
      FR-014c (preserve v1 config for rollback), Edge Cases, Key Entities, SC-008.
 - Spec is ready for `/speckit-clarify` (optional) or `/speckit-plan`.
+
+**Amendment 2026-09-08 — release channels & staged rollout** (user decision):
+added FR-005a–FR-005e and SC-001a. Channel (`stable`/`beta`) is compiled into the build; a
+`stable` build only self-updates from stable releases, a `beta` build only from prereleases;
+the existing v1 fleet only auto-updates from stable. A stable `vX.Y.Z` MUST NOT be cut until
+the matching beta ran ≥7 days on ≥3 beta instruments with 0 Sev-1 telemetry. Mirrored in
+constitution v1.3.0 (Build section) and spec 002 (heartbeat carries the channel).

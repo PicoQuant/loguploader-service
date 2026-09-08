@@ -1,6 +1,34 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.2.0 → 1.3.0
+Rationale: Add a staged-rollout mandate to the Build, Release & Distribution section: a v2
+release reaches the full fleet only after a beta period on a limited cohort, with an explicit
+promotion gate. Operationalizes Principle VI's "tested on a real Windows install" for a fleet
+of unknown machines. MINOR bump: new mandate added to an existing section, no principle
+removed or redefined.
+
+Modified sections:
+  Build, Release & Distribution — added: stable vs beta channels (channel compiled into the
+    build; separate per-product-per-channel artifacts); beta releases are GitHub prereleases;
+    a stable release MUST NOT be cut until the matching beta has run >= 7 days on >= 3 beta
+    instruments with zero Sev-1 telemetry
+
+Added principles: none
+Removed sections: none
+
+Templates / files requiring updates:
+  ✅ .specify/memory/constitution.md (this file)
+  ✅ specs/001-v2-remote-upgrade/spec.md — channel-aware updater + the promotion gate as FRs
+  ✅ specs/002-v2-config-backup-telemetry/{spec,plan,tasks,data-model,research}.md +
+     contracts/ — build carries a channel constant; heartbeat reports it; CI matrix is
+     product x channel
+
+Deferred TODOs:
+  - RATIFICATION_DATE remains 2026-09-08.
+
+Prior report (1.1.0 → 1.2.0)
+----------------------------
 Version change: 1.1.0 → 1.2.0
 Rationale: Realign the delivery guidance with the v2 decision to build the agent as a
 compiled single-binary Windows service (Rust) instead of a packaged Python interpreter.
@@ -204,6 +232,15 @@ its single most important requirement.
   `client_version.json`; v2: a per-interval `agent_status` submission). Any
   once-per-UTC-day idempotency requirement applies to the v2 configuration-file
   backups: a given file uploads at most once per UTC day, and only when it changed.
+- **Staged rollout (v2).** A release reaches the full fleet only after a beta
+  period. v2 builds carry their channel — `stable` or `beta` — compiled in; CI
+  produces a separate artifact per product per channel. Beta releases are published
+  as GitHub prereleases; a `stable` build self-updates only from stable releases, a
+  `beta` build only from prereleases. A stable `vX.Y.Z` MUST NOT be cut until the
+  matching beta build has run at least 7 days on at least 3 beta instruments with
+  zero Sev-1 telemetry (failed upgrade, crash-loop, or stopped service). The beta
+  cohort is seeded by installing beta builds by hand; the existing v1 fleet only
+  ever auto-updates to v2 from a stable release.
 - Backward compatibility of the upload path and share-token handling MUST be
   preserved unless a MAJOR constitution amendment and a migration note accompany
   the change.
@@ -247,4 +284,4 @@ Unavoidable complexity or a principle deviation MUST be called out and justified
 the PR; unjustified violations block merge. This file is the runtime development
 guidance source for the project.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.3.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08

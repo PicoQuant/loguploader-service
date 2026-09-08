@@ -59,7 +59,11 @@ finalizes the transport design.
    install before the Solira build ships. Working assumption: Luminosa layout with `Solira`
    swapped in. Isolated to the Solira per-product build.
 
-**Implementation note (for `/speckit-plan`, not the spec):** user prefers a compiled
-single-binary Windows service, Rust preferred (Go alternative). This conflicts with the
-current constitution's PyInstaller/Python wording (Principle V + Build section) and will
-require a constitution amendment.
+**Implementation:** planned as a compiled single-binary **Rust** Windows service
+(`plan.md` + research/data-model/contracts). Constitution amended to **v1.3.0** — Principle V
+allows a compiled binary; Build section adds the staged-rollout / beta-channel mandate.
+
+**Amendment 2026-09-08 — release channels** (user decision): added FR-002e/FR-002f, `channel`
+in FR-004 + the heartbeat schema, SC-008b. Build carries a compiled-in `stable`/`beta`
+channel; CI matrix is product × channel (4 artifacts); the agent reports its channel in every
+heartbeat. The channel-aware updater + beta→stable promotion gate live in `specs/001`.

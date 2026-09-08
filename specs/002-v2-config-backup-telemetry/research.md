@@ -144,17 +144,37 @@ a technical unknown — tracked in `plan.md` Complexity Tracking + Next Actions.
 - **Alternatives**: separate heartbeat vs backup intervals (more config, no real benefit —
   both are cheap and want similar cadence).
 
-## D12. Build-time secret injection
+## D12. Build-time constant injection (product, channel, token, version)
 
-- **Decision**: CI sets `PQ_PRODUCT` and passes the matching
+- **Decision**: CI sets `PQ_PRODUCT` and `PQ_CHANNEL` and passes the matching
   `TELEMETRY_FLEET_TOKENS_<PRODUCT>` GitHub Actions secret as an env var to `cargo build`;
-  `build.rs` reads them and emits `cargo:rustc-env=PQ_FLEET_TOKEN=...` (first comma-separated
-  entry) and `cargo:rustc-env=PQ_PRODUCT=...`. The release workflow runs the build once per
-  product (matrix). Locally, `build.rs` also loads a gitignored `.env` if present.
-- **Rationale**: mirrors v1's `PUBLIC_LINK` pattern (Principle II); one artifact per product
-  (FR-002b); token never in source or git history (FR-023) — verified by a CI grep gate.
+  `build.rs` emits `cargo:rustc-env=` for `PQ_PRODUCT`, `PQ_CHANNEL` (default `stable`),
+  `PQ_FLEET_TOKEN` (first comma-separated entry), `PQ_VERSION` (repo `VERSION`). The release
+  workflow runs a **product × channel matrix** (4 builds). Locally, `build.rs` also loads a
+  gitignored `.env` if present.
+- **Rationale**: mirrors v1's `PUBLIC_LINK` pattern (Principle II); one artifact per
+  (product, channel) (FR-002b, FR-002e); token never in source or git history (FR-023) —
+  verified by a CI grep gate. Channel compiled in (not config/backend) so a `beta` build is
+  physically unable to install a stable release and vice versa (constitution v1.3.0).
 - **Rotation (FR-025)**: ship a new build with the new token value; the backend accepts old
-  + new during the transition; retire the old value after the fleet has updated.
+  + new during the transition; retire the old value after the fleet has updated. The same
+  token serves both channels of a product.
+
+## D14. Release channels — stable / beta
+
+- **Decision**: two channels, **compiled into the build** (`PQ_CHANNEL`). The agent's only
+  channel responsibility is to report it in the heartbeat (`data-model.md`). Which release a
+  machine self-updates from is decided by the updater in `specs/001-v2-remote-upgrade`:
+  a `stable` build → GitHub `/releases/latest` (excludes prereleases, unchanged from v1);
+  a `beta` build → newest release including prereleases. Beta releases are published with
+  `prerelease: true`; beta tags are `vX.Y.Z-beta.N`.
+- **Rationale**: the existing v1 fleet already only sees stable (its updater uses `/latest`),
+  so the automatic v1→v2 rollout is inherently gated. The beta cohort is a handful of
+  internal instruments seeded with beta builds by hand. The constitution (v1.3.0 Build
+  section) requires ≥ 7 days on ≥ 3 beta instruments with 0 Sev-1 telemetry before a stable
+  `vX.Y.Z` is cut — the heartbeat channel field makes that measurable.
+- **Alternatives**: channel in `config.toml` (editable / can be lost); backend-assigned
+  cohort (needs backend work, softens "device→backend only"). Rejected per the user's call.
 
 ## D13. Testing approach
 

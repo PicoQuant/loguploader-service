@@ -4,19 +4,21 @@ Entities are mostly in-memory value types plus one persisted file (`state.json`)
 payloads. No database on the client. Field names below are the canonical names; JSON schemas
 for the persisted and wire shapes are in `contracts/`.
 
-## ProductIdentity (compile-time)
+## BuildIdentity (compile-time)
 
 | Field | Type | Source | Notes |
 |---|---|---|---|
 | `product` | enum `Luminosa` \| `Solira` | `build.rs` → `env!("PQ_PRODUCT")` | one build per product (FR-002b) |
+| `channel` | enum `Stable` \| `Beta` | `build.rs` → `env!("PQ_CHANNEL")`, default `stable` | one build per channel (FR-002e); reported in every heartbeat (FR-002f) |
 | `bucket` | `&'static str` | derived: `"luminosa"` / `"solira"` | goes on every submission (FR-002d, FR-019) |
-| `fleet_token` | `&'static str` | `env!("PQ_FLEET_TOKEN")` | first entry of the CI secret list (FR-024) |
+| `fleet_token` | `&'static str` | `env!("PQ_FLEET_TOKEN")` | first entry of the CI secret list; same token both channels (FR-024) |
 | `version` | `&'static str` | `env!("PQ_VERSION")` = `VERSION` file | FR-004; Principle II |
 | `install_dir` | `PathBuf` | table in `product.rs` | `C:\Program Files\PicoQuant\<Product>\` |
 | `data_dir` | `PathBuf` | table in `product.rs` | `C:\ProgramData\PicoQuant\<Product>\` |
 
-**Validation**: a *release* build fails if `product` is unset/unknown or `fleet_token` is
-empty. A machine cannot run as the wrong product because there is no runtime switch.
+**Validation**: a *release* build fails if `product` is unset/unknown, `channel` is invalid,
+or `fleet_token` is empty. A machine cannot run as the wrong product or channel — there is no
+runtime switch. Channel-aware self-update selection is `specs/001-v2-remote-upgrade`.
 
 ## WatchedFileSpec (per-product, static table)
 
@@ -102,6 +104,7 @@ Envelope: `measurement_type = "agent_status"`, `measured_at` = cycle-start RFC33
 | `machine_id` | string | MachineGuid, or all-zero GUID fallback |
 | `agent_version` | string | `PQ_VERSION` |
 | `product` | string | bucket |
+| `channel` | enum `stable` \| `beta` | `PQ_CHANNEL`; feeds spec 001's promotion gate (FR-002f) |
 | `serial_source` | enum `file` \| `unknown` | FR-009a / US3 scenario 3 |
 | `os` | object `{ version, build, arch }` | from `GetVersionEx`/`RtlGetVersion` + arch |
 | `cycle` | object `{ started_utc, duration_ms, ok }` | last cycle health |

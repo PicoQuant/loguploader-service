@@ -22,6 +22,7 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
     "machine_id": "0f4a...-...-...",
     "agent_version": "2.0.0",
     "product": "luminosa",
+    "channel": "stable",
     "serial_source": "file",
     "os": { "version": "10.0.19045", "build": "19045", "arch": "x86_64" },
     "cycle": { "started_utc": "2026-09-08T08:17:10Z", "duration_ms": 812, "ok": true },

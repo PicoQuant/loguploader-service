@@ -224,6 +224,26 @@ it onto v2.
   periods (e.g. reboot), the system MUST provide an additional opportunity so the bound in
   FR-004 still holds.
 
+#### Release channels & staged rollout
+
+- **FR-005a**: There MUST be two release channels: **stable** and **beta**. A machine's
+  channel is fixed by the build it runs (compiled in); it is not switchable via config or
+  from the backend. CI produces a separate artifact per product per channel.
+- **FR-005b**: A `stable` build MUST only ever self-update to a **stable** release; a `beta`
+  build MUST only ever self-update to a **beta** release (published as a prerelease). Neither
+  crosses to the other channel.
+- **FR-005c**: The existing v1 fleet's updater MUST only pick up **stable** v2 releases (it
+  already queries "latest", which excludes prereleases) — the automatic v1→v2 rollout is
+  therefore always via a stable release. Beta v2 builds reach the beta cohort only by being
+  installed by hand.
+- **FR-005d**: A stable `vX.Y.Z` MUST NOT be published until the **matching beta build** has
+  run at least **7 days** on at least **3 beta instruments** with **zero Sev-1 telemetry**
+  (failed upgrade, crash-loop, or stopped service) over that window. (Constitution — Build,
+  Release & Distribution.)
+- **FR-005e**: The maintainer MUST be able to tell, from fleet telemetry alone, which
+  machines are on the beta channel and their health over the beta window, so FR-005d can be
+  evaluated without contacting customers.
+
 #### Integrity & safety
 
 - **FR-006**: The system MUST verify the integrity and authenticity of an upgrade package
@@ -328,8 +348,11 @@ it onto v2.
 
 ### Measurable Outcomes
 
-- **SC-001**: After v2 is published, at least 95% of machines that can reach the release
-  channel are running v2 within 14 days, with no per-machine manual action.
+- **SC-001**: After a **stable** v2 release is published, at least 95% of machines that can
+  reach the release channel are running v2 within 14 days, with no per-machine manual action.
+- **SC-001a**: No stable v2 release is cut without a documented beta record showing ≥ 7 days
+  on ≥ 3 beta instruments with zero Sev-1 telemetry (FR-005d). A `stable` build never installs
+  a prerelease, and a `beta` build never installs a stable release — 0 cross-channel updates.
 - **SC-002**: Zero machines are left without a running, functioning uploader as a result of the
   upgrade (previous or new version always running).
 - **SC-003**: 100% of upgrade attempts interrupted by network loss, power loss, or a failed

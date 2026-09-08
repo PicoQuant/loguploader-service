@@ -4,7 +4,7 @@
   "title": "v2 agent heartbeat payload",
   "description": "The `payload` object of a POST /api/v2/products/{product}/telemetry with measurement_type=agent_status",
   "type": "object",
-  "required": ["machine_id", "agent_version", "product", "serial_source", "os", "cycle"],
+  "required": ["machine_id", "agent_version", "product", "channel", "serial_source", "os", "cycle"],
   "additionalProperties": false,
   "properties": {
     "machine_id": {
@@ -22,6 +22,11 @@
     "product": {
       "type": "string",
       "enum": ["luminosa", "solira"]
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["stable", "beta"],
+      "description": "compiled-in release channel; feeds the beta->stable promotion gate in specs/001"
     },
     "serial_source": {
       "type": "string",
