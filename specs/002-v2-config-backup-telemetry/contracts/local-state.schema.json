@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/v2agent/local-state.json",
+  "title": "v2 agent local state (state.json)",
+  "description": "Persisted at C:\\ProgramData\\PicoQuant\\<Product>\\v2agent\\state.json, atomic write. Survives reboot and v2 self-update (FR-034). An unreadable or higher schema_version file is treated as empty (first-run semantics).",
+  "type": "object",
+  "required": ["schema_version", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "files": {
+      "type": "object",
+      "description": "file_key -> per-file backup state",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["last_backup_sha256", "last_backup_utc_day", "last_success_utc"],
+        "additionalProperties": false,
+        "properties": {
+          "last_backup_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "digest of the file contents at last successful backup (change-detection baseline, FR-010)"
+          },
+          "last_backup_utc_day": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "UTC day of last successful backup; the once-per-day gate (FR-011). Advanced only on a confirmed 200 (incl. deduplicated)."
+          },
+          "last_success_utc": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "last_heartbeat_utc": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "last_cycle": {
+      "type": ["object", "null"],
+      "required": ["started_utc", "ok", "counts", "heartbeat_ok"],
+      "additionalProperties": false,
+      "properties": {
+        "started_utc": { "type": "string", "format": "date-time" },
+        "ok": { "type": "boolean" },
+        "heartbeat_ok": { "type": "boolean" },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sent": { "type": "integer", "minimum": 0 },
+            "unchanged": { "type": "integer", "minimum": 0 },
+            "blocked": { "type": "integer", "minimum": 0 },
+            "retry_later": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}

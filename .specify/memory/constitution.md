@@ -1,6 +1,45 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.1.0 → 1.2.0
+Rationale: Realign the delivery guidance with the v2 decision to build the agent as a
+compiled single-binary Windows service (Rust) instead of a packaged Python interpreter.
+Principle V is generalized from "PyInstaller EXE + Python" to "a single self-contained
+executable, compiled-language preferred"; the Build section and Principle IV's success-marker
+wording follow. MINOR bump: this is not a loosening — a Rust binary meets every requirement
+Principle V imposes (self-contained, no runtime on target, minimal justified deps, YAGNI) and
+arguably raises the bar; an implementation-specific prescription is replaced with a broader,
+tool-agnostic standard. No principle removed or redefined incompatibly; v1's PyInstaller build
+still complies.
+
+Modified principles:
+  V. Minimal Dependencies, Self-Contained Delivery — generalized to any compiled
+     self-contained executable; native binary preferred over a packaged interpreter
+  IV. Observable by Default — success/failure marker made tool-agnostic (v1 `Uploaded:`
+     prefix; v2 structured `cycles.log` + backend heartbeat)
+
+Modified sections:
+  Build, Release & Distribution — build step is tool-agnostic (v1 PyInstaller / v2
+     `cargo build` per product); per-product builds with compiled-in bucket + fleet token;
+     telemetry is a recurring heartbeat, the once-per-UTC-day rule now governs config backups
+  Development Workflow — submission-path testing is backend-agnostic (v1 Nextcloud /
+     v2 `api.picoquant.com`)
+
+Added principles: none
+Removed sections: none
+
+Templates / files requiring updates:
+  ✅ .specify/memory/constitution.md (this file)
+  ✅ specs/002-v2-config-backup-telemetry/plan.md — Constitution Check gate now passes;
+     Complexity Tracking rows for Principle V / Build section are resolved by this amendment
+  ⚠ .github/workflows/*.yml — still PyInstaller; rewritten for Rust during v2 implementation
+
+Deferred TODOs:
+  - RATIFICATION_DATE remains 2026-09-08. If the team considers an earlier adoption date
+    authoritative, amend with a PATCH bump.
+
+Prior report (v1.0.0 → 1.1.0)
+-----------------------------
 Version change: 1.0.0 → 1.1.0
 Rationale: Added a new non-negotiable principle (VI) guaranteeing that any deployed
 version can be replaced in place, remotely, by a later version. Triggered by the
@@ -88,25 +127,35 @@ premature delete or a half-written upload destroys data that cannot be regenerat
 
 ### IV. Observable by Default
 
-Every cycle MUST log, to the Windows Event Log, the resolved log directory, the
-instrument serial number, the machine ID, and a per-file outcome line for each
-upload attempt including attempt count and any fallback note. Success lines MUST be
-machine-detectable (the `Uploaded:` prefix contract). Failures MUST log the
-exception type and message.
+Every cycle MUST record, to the Windows Event Log, the resolved working directory or
+paths, the instrument serial number, the machine ID, and a per-item outcome for each
+upload or backup attempt including attempt count and any fallback note. Outcomes MUST
+be machine-detectable — a stable success/failure marker in a structured line (v1: the
+`Uploaded:` prefix; v2: structured `cycles.log` records plus the per-interval backend
+heartbeat). Failures MUST record the error type and message. Detailed per-item
+records MAY live in a size-capped local file that a remote maintainer can retrieve,
+so long as a cycle summary still reaches the Event Log.
 
-Rationale: the Event Log is the only diagnostic channel available in the field.
-Structured, greppable output is what makes remote troubleshooting possible.
+Rationale: the Event Log is the diagnostic channel that is always present in the
+field. Structured, greppable output — locally and, for v2, queryable on the backend —
+is what makes remote troubleshooting possible without a site visit.
 
 ### V. Minimal Dependencies, Self-Contained Delivery
 
-The service ships as a single self-contained PyInstaller EXE that runs without a
-Python installation on the target. New third-party dependencies MUST be justified
-against using the standard library. The codebase stays small and direct; speculative
-abstraction and features not required by a current need (YAGNI) MUST be rejected in
-review.
+The service ships as a **single self-contained executable** that runs on a stock
+Windows machine with no separate runtime, interpreter, or framework to install, and
+no dependency on libraries beyond the operating system's own. A compiled-language
+build (the v2 agent is Rust) is preferred over a packaged-interpreter bundle. Every
+new third-party dependency — library, build tool, or language runtime — MUST be
+justified in the plan or the PR against using the standard library or a dependency
+already present. The codebase stays small and direct; speculative abstraction and
+features not required by a current need (YAGNI) MUST be rejected in review.
 
-Rationale: every dependency is another thing that can break a frozen build or
-introduce a CVE onto a customer machine that is rarely updated.
+Rationale: every dependency is another thing that can break the build or introduce a
+CVE onto a customer machine that is rarely patched. A native single binary carries
+less of that risk than a frozen interpreter — no multi-megabyte unpack at start, no
+bundled runtime version to drift, a smaller attack surface, and it is harder to
+tamper with in the field.
 
 ### VI. Remote Upgradeability Is Non-Negotiable
 
@@ -138,12 +187,23 @@ its single most important requirement.
 ## Build, Release & Distribution
 
 - Windows builds are produced by `.github/workflows/windows-build.yml`; releases by
-  `.github/workflows/release.yml`, triggered by pushing a `v*` tag.
-- A release MUST publish the installer, a `.sha256` checksum, and the service EXE.
+  `.github/workflows/release.yml`, triggered by pushing a `v*` tag. The build step
+  compiles the service (v1: PyInstaller; v2: `cargo build`) — the workflow files and
+  the artifacts they produce are the contract, not the build tool.
+- Every release MUST ship a silent-capable **installer**, a `.sha256` checksum, and
+  the service executable, under asset names the deployed updater can consume
+  (Principle VI). Distribution is always via the installer, never a bare executable.
 - The installer MUST register the `\PicoQuant\LuminosaLogUploader\AutoUpdate`
   scheduled task and install `updater/update.ps1`. Changes to the updater or task
   registration MUST be verified on a real Windows install before release.
-- `client_version.json` upload MUST remain idempotent per day per machine.
+- v2 produces one build and one installer **per product** (`luminosa`, `solira`),
+  each with that product's bucket and fleet submission token compiled in from a CI
+  secret (never committed). A machine MUST NOT be able to run or be upgraded to a
+  build for the wrong product.
+- Device/version telemetry MUST be sent on a recurring heartbeat (v1: the once-daily
+  `client_version.json`; v2: a per-interval `agent_status` submission). Any
+  once-per-UTC-day idempotency requirement applies to the v2 configuration-file
+  backups: a given file uploads at most once per UTC day, and only when it changed.
 - Backward compatibility of the upload path and share-token handling MUST be
   preserved unless a MAJOR constitution amendment and a migration note accompany
   the change.
@@ -159,8 +219,10 @@ its single most important requirement.
   is `main`.
 - The reviewer MUST confirm the change respects every principle above, or that a
   deviation is explicitly justified in the PR description.
-- Upload-path changes MUST be exercised against a real Nextcloud file-drop share
-  (see `test_public_webdav_put.py`, `testnextcloud_upload.py`) before merge.
+- Changes to the upload/submission path MUST be exercised against the real backend
+  before merge (v1: a Nextcloud file-drop share, `test_public_webdav_put.py` /
+  `testnextcloud_upload.py`; v2: `api.picoquant.com` with a test fleet token, see
+  `specs/002-v2-config-backup-telemetry/quickstart.md`).
 - Release commits follow the existing convention (`chore(release): X.Y.Z`) and are
   produced by the release helper, not by hand.
 - User-facing behavior changes MUST be reflected in `README.MD`.
@@ -185,4 +247,4 @@ Unavoidable complexity or a principle deviation MUST be called out and justified
 the PR; unjustified violations block merge. This file is the runtime development
 guidance source for the project.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.2.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
