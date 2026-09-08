@@ -88,7 +88,10 @@ fn process_file(
             mtime,
         } => (bytes, sha256, mtime),
         ReadResult::Locked => {
-            log::warn!("{file_key}: locked/torn, retry next cycle");
+            log::warn!(
+                "{file_key}: locked/torn at {}, retry next cycle",
+                abs_path.display()
+            );
             ctx.note_blocked(file_key, "locked");
             ctx.note_failure(FailureCategory::FileLocked);
             return outcome(
@@ -98,7 +101,7 @@ fn process_file(
             );
         }
         ReadResult::Absent => {
-            log::info!("{file_key}: absent this cycle");
+            log::info!("{file_key}: absent this cycle ({})", abs_path.display());
             ctx.note_blocked(file_key, "absent");
             return outcome(
                 file_key,
@@ -107,7 +110,10 @@ fn process_file(
             );
         }
         ReadResult::TooLarge(size) => {
-            log::warn!("{file_key}: {size} bytes exceeds backup_max_bytes; skipped");
+            log::warn!(
+                "{file_key}: {size} bytes at {} exceeds backup_max_bytes; skipped",
+                abs_path.display()
+            );
             ctx.note_blocked(file_key, "too_large");
             return outcome(
                 file_key,
