@@ -80,7 +80,10 @@ fn failed_send_does_not_advance_the_day_but_dedup_200_does() {
             .expect_at_least(1)
             .create();
         let _hb = server
-            .mock("POST", format!("/api/v2/products/{bucket}/telemetry").as_str())
+            .mock(
+                "POST",
+                format!("/api/v2/products/{bucket}/telemetry").as_str(),
+            )
             .with_status(200)
             .with_body(r#"{"ok":true}"#)
             .expect_at_least(1)
@@ -96,7 +99,10 @@ fn failed_send_does_not_advance_the_day_but_dedup_200_does() {
             .find(|f| f.file_key == "pqdevice_conf")
             .expect("pqdevice_conf outcome");
         assert_eq!(conf.action, cycle::FileAction::RetryLater);
-        assert!(state.file("pqdevice_conf").is_none(), "day must not advance on failure");
+        assert!(
+            state.file("pqdevice_conf").is_none(),
+            "day must not advance on failure"
+        );
     }
 
     // ---- cycle 2: backend dedupes with 200 {deduplicated:true} -> day advanced ----
@@ -109,7 +115,10 @@ fn failed_send_does_not_advance_the_day_but_dedup_200_does() {
             .expect_at_least(1)
             .create();
         let _hb = server
-            .mock("POST", format!("/api/v2/products/{bucket}/telemetry").as_str())
+            .mock(
+                "POST",
+                format!("/api/v2/products/{bucket}/telemetry").as_str(),
+            )
             .with_status(200)
             .with_body(r#"{"ok":true}"#)
             .expect_at_least(1)
@@ -125,7 +134,9 @@ fn failed_send_does_not_advance_the_day_but_dedup_200_does() {
             .find(|f| f.file_key == "pqdevice_conf")
             .unwrap();
         assert_eq!(conf.action, cycle::FileAction::Deduplicated);
-        let fs = state.file("pqdevice_conf").expect("day advanced on dedup 200");
+        let fs = state
+            .file("pqdevice_conf")
+            .expect("day advanced on dedup 200");
         assert_eq!(fs.last_backup_utc_day, cycle::utc_day(cycle::now_utc()));
     }
 }

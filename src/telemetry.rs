@@ -144,7 +144,12 @@ mod tests {
     #[test]
     fn envelope_has_required_shape() {
         let state = LocalBackupState::default();
-        let env = build_envelope(&cfg(), &identity(Serial::Known("SN-1".into())), &state, &ctx());
+        let env = build_envelope(
+            &cfg(),
+            &identity(Serial::Known("SN-1".into())),
+            &state,
+            &ctx(),
+        );
         assert_eq!(env["measurement_type"], "agent_status");
         assert_eq!(env["instrument_serial"], "SN-1");
         assert!(env["measured_at"].as_str().unwrap().contains('T'));
@@ -182,6 +187,9 @@ mod tests {
         c.blocked_backups.clear();
         let env = build_envelope(&cfg(), &identity(Serial::Known("SN-1".into())), &state, &c);
         assert!(env["payload"]["last_failure_category"].is_null());
-        assert_eq!(env["payload"]["blocked_backups"].as_array().unwrap().len(), 0);
+        assert_eq!(
+            env["payload"]["blocked_backups"].as_array().unwrap().len(),
+            0
+        );
     }
 }

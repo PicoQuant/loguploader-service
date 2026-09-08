@@ -184,7 +184,10 @@ impl RollingFile {
         // Drop the oldest, shift the rest up, then reopen a fresh primary.
         let rotated = |n: usize| -> PathBuf {
             let mut p = self.path.clone();
-            let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("cycles.log");
+            let name = p
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("cycles.log");
             p.set_file_name(format!("{name}.{n}"));
             p
         };
@@ -230,7 +233,9 @@ mod tests {
         rf.flush().unwrap();
         assert!(path.with_file_name("cycles.log.1").exists());
         // never keeps more than KEEP_ROTATIONS rotations
-        assert!(!path.with_file_name(format!("cycles.log.{}", KEEP_ROTATIONS + 1)).exists());
+        assert!(!path
+            .with_file_name(format!("cycles.log.{}", KEEP_ROTATIONS + 1))
+            .exists());
         fs::remove_dir_all(&dir).ok();
     }
 }

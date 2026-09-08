@@ -99,7 +99,10 @@ pub fn instrument_serial(path: &Path) -> Serial {
         Ok(contents) => match contents.split_whitespace().last() {
             Some(tok) if !tok.is_empty() => Serial::Known(tok.to_string()),
             _ => {
-                log::warn!("{} contained no serial token; serial unknown", path.display());
+                log::warn!(
+                    "{} contained no serial token; serial unknown",
+                    path.display()
+                );
                 Serial::Unknown
             }
         },

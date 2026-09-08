@@ -31,7 +31,10 @@ fn agent_sends_the_verbatim_compiled_token_as_x_telemetry_token() {
         mockito::Matcher::Exact(config::FLEET_TOKEN.to_string())
     };
     let m = server
-        .mock("POST", format!("/api/v2/products/{bucket}/telemetry").as_str())
+        .mock(
+            "POST",
+            format!("/api/v2/products/{bucket}/telemetry").as_str(),
+        )
         .match_header("x-telemetry-token", expected)
         .with_status(200)
         .with_body(r#"{"ok":true}"#)
@@ -56,6 +59,8 @@ fn agent_sends_the_verbatim_compiled_token_as_x_telemetry_token() {
         cycle_ok: true,
     };
     let env = pquploader::telemetry::build_envelope(&cfg, &id, &state, &ctx);
-    pquploader::api::Api::new(&cfg).post_heartbeat(&env).expect("200");
+    pquploader::api::Api::new(&cfg)
+        .post_heartbeat(&env)
+        .expect("200");
     m.assert();
 }

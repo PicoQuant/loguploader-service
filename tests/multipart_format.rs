@@ -50,10 +50,16 @@ fn required_and_optional_parts_present() {
         "source_path",
         "content_sha256",
     ] {
-        assert!(names.contains(&required.to_string()), "missing required part {required}");
+        assert!(
+            names.contains(&required.to_string()),
+            "missing required part {required}"
+        );
     }
     for optional in ["file_mtime", "agent_version", "client_timestamp"] {
-        assert!(names.contains(&optional.to_string()), "missing optional part {optional}");
+        assert!(
+            names.contains(&optional.to_string()),
+            "missing optional part {optional}"
+        );
     }
 
     let text = String::from_utf8_lossy(&body);

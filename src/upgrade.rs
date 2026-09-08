@@ -35,7 +35,11 @@ pub fn print_version(as_json: bool) {
         println!("api_base_url:  {}", cfg.api_base_url);
         println!(
             "fleet_token:   {}",
-            if cfg.has_fleet_token() { "present" } else { "absent" }
+            if cfg.has_fleet_token() {
+                "present"
+            } else {
+                "absent"
+            }
         );
     }
     // SC-006: never print the token value itself.
@@ -49,7 +53,10 @@ pub fn is_newer_cli(remote: &str) -> ExitCode {
         Some(Ordering::Greater) => ExitCode::SUCCESS,
         Some(_) => ExitCode::from(1),
         None => {
-            eprintln!("is-newer: could not parse a version ('{remote}' vs '{}')", config::VERSION);
+            eprintln!(
+                "is-newer: could not parse a version ('{remote}' vs '{}')",
+                config::VERSION
+            );
             ExitCode::from(2)
         }
     }
@@ -206,7 +213,9 @@ pub fn upgrade_report_cli(args: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("upgrade-report: submit failed ({e}); the upgrade outcome itself is unaffected");
+            eprintln!(
+                "upgrade-report: submit failed ({e}); the upgrade outcome itself is unaffected"
+            );
             ExitCode::from(1)
         }
     }
@@ -225,8 +234,14 @@ mod tests {
 
     #[test]
     fn prerelease_is_lower_than_release() {
-        assert_eq!(compare_semver("2.0.0-beta.1", "2.0.0"), Some(Ordering::Less));
-        assert_eq!(compare_semver("2.0.0", "2.0.0-beta.1"), Some(Ordering::Greater));
+        assert_eq!(
+            compare_semver("2.0.0-beta.1", "2.0.0"),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            compare_semver("2.0.0", "2.0.0-beta.1"),
+            Some(Ordering::Greater)
+        );
     }
 
     #[test]

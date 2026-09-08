@@ -46,7 +46,11 @@ pub fn resolve_and_read(cfg: &Config) -> Vec<ResolvedWatchedFile> {
         match spec.kind {
             FileKind::Fixed => {
                 let abs = root.join(spec.rel);
-                out.push(read_one(spec.file_key.to_string(), abs, cfg.backup_max_bytes));
+                out.push(read_one(
+                    spec.file_key.to_string(),
+                    abs,
+                    cfg.backup_max_bytes,
+                ));
             }
             FileKind::Glob => {
                 for (key, abs) in expand_glob(spec, root) {
@@ -66,7 +70,10 @@ fn expand_glob(spec: &WatchedFileSpec, root: &Path) -> Vec<(String, PathBuf)> {
         Some((d, p)) => (root.join(d), p.to_string()),
         None => (root.to_path_buf(), rel),
     };
-    let ext = pattern.strip_prefix("*.").unwrap_or(&pattern).to_ascii_lowercase();
+    let ext = pattern
+        .strip_prefix("*.")
+        .unwrap_or(&pattern)
+        .to_ascii_lowercase();
 
     let mut matches = Vec::new();
     let Ok(entries) = std::fs::read_dir(&subdir) else {
@@ -218,7 +225,10 @@ mod tests {
         let d = scratch("big");
         let p = d.join("big.bin");
         fs::write(&p, vec![0u8; 2048]).unwrap();
-        assert!(matches!(read_consistent(&p, 1024), ReadResult::TooLarge(2048)));
+        assert!(matches!(
+            read_consistent(&p, 1024),
+            ReadResult::TooLarge(2048)
+        ));
         fs::remove_dir_all(&d).ok();
     }
 

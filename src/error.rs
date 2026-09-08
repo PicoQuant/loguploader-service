@@ -128,7 +128,10 @@ mod tests {
             FailureCategory::TooLarge,
             FailureCategory::FileAbsent,
         ] {
-            assert!(!c.retryable_next_cycle(), "{c} should NOT be blindly retried");
+            assert!(
+                !c.retryable_next_cycle(),
+                "{c} should NOT be blindly retried"
+            );
         }
     }
 
@@ -136,7 +139,10 @@ mod tests {
     fn blocked_reasons_are_the_four_wire_values() {
         assert_eq!(FailureCategory::FileLocked.blocked_reason(), Some("locked"));
         assert_eq!(FailureCategory::FileAbsent.blocked_reason(), Some("absent"));
-        assert_eq!(FailureCategory::TooLarge.blocked_reason(), Some("too_large"));
+        assert_eq!(
+            FailureCategory::TooLarge.blocked_reason(),
+            Some("too_large")
+        );
         assert_eq!(
             FailureCategory::RejectedBadRequest.blocked_reason(),
             Some("rejected")

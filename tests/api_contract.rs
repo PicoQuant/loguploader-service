@@ -58,12 +58,20 @@ fn heartbeat_request_matches_contract() {
 
     let cfg = Config::with_base_url(server.url());
     let state = LocalBackupState::default();
-    let envelope = telemetry::build_envelope(&cfg, &identity(Serial::Known("SN-1".into())), &state, &ctx());
+    let envelope = telemetry::build_envelope(
+        &cfg,
+        &identity(Serial::Known("SN-1".into())),
+        &state,
+        &ctx(),
+    );
 
     // shape assertions on the envelope we actually send
     assert_eq!(envelope["measurement_type"], "agent_status");
     assert_eq!(envelope["instrument_serial"], "SN-1");
-    assert!(envelope["payload"].as_object().map(|o| !o.is_empty()).unwrap_or(false));
+    assert!(envelope["payload"]
+        .as_object()
+        .map(|o| !o.is_empty())
+        .unwrap_or(false));
     assert!(!envelope["payload"]["instrument_serial"].is_string()); // serial is on the envelope, not payload
     assert_eq!(envelope["payload"]["channel"], Channel::current().as_str());
 
@@ -90,7 +98,9 @@ fn heartbeat_missing_serial_is_still_sent_as_unknown() {
     let state = LocalBackupState::default();
     let envelope = telemetry::build_envelope(&cfg, &identity(Serial::Unknown), &state, &ctx());
     assert_eq!(envelope["payload"]["serial_source"], "unknown");
-    Api::new(&cfg).post_heartbeat(&envelope).expect("unknown serial accepted");
+    Api::new(&cfg)
+        .post_heartbeat(&envelope)
+        .expect("unknown serial accepted");
     m.assert();
 }
 
@@ -116,7 +126,12 @@ fn status_codes_map_to_expected_categories() {
 
         let cfg = Config::with_base_url(server.url());
         let state = LocalBackupState::default();
-        let env = telemetry::build_envelope(&cfg, &identity(Serial::Known("SN-1".into())), &state, &ctx());
+        let env = telemetry::build_envelope(
+            &cfg,
+            &identity(Serial::Known("SN-1".into())),
+            &state,
+            &ctx(),
+        );
         let got = Api::new(&cfg).post_heartbeat(&env);
         match expected {
             None => assert!(got.is_ok(), "code {code} should be ok"),
@@ -143,7 +158,12 @@ fn backend_error_is_retried_three_times_then_left_for_next_cycle() {
 
     let cfg = Config::with_base_url(server.url());
     let state = LocalBackupState::default();
-    let env = telemetry::build_envelope(&cfg, &identity(Serial::Known("SN-1".into())), &state, &ctx());
+    let env = telemetry::build_envelope(
+        &cfg,
+        &identity(Serial::Known("SN-1".into())),
+        &state,
+        &ctx(),
+    );
     let err = Api::new(&cfg).post_heartbeat(&env).unwrap_err();
     assert_eq!(err.category, FailureCategory::BackendError);
     m.assert(); // exactly 3 attempts
@@ -162,7 +182,12 @@ fn auth_failure_is_not_retried_within_a_cycle() {
 
     let cfg = Config::with_base_url(server.url());
     let state = LocalBackupState::default();
-    let env = telemetry::build_envelope(&cfg, &identity(Serial::Known("SN-1".into())), &state, &ctx());
+    let env = telemetry::build_envelope(
+        &cfg,
+        &identity(Serial::Known("SN-1".into())),
+        &state,
+        &ctx(),
+    );
     let err = Api::new(&cfg).post_heartbeat(&env).unwrap_err();
     assert_eq!(err.category, FailureCategory::Auth);
     m.assert();
@@ -173,7 +198,12 @@ fn connection_refused_is_no_network() {
     // nothing is listening on this port
     let cfg = Config::with_base_url("http://127.0.0.1:9");
     let state = LocalBackupState::default();
-    let env = telemetry::build_envelope(&cfg, &identity(Serial::Known("SN-1".into())), &state, &ctx());
+    let env = telemetry::build_envelope(
+        &cfg,
+        &identity(Serial::Known("SN-1".into())),
+        &state,
+        &ctx(),
+    );
     let err = Api::new(&cfg).post_heartbeat(&env).unwrap_err();
     assert_eq!(err.category, FailureCategory::NoNetwork);
 }
@@ -193,8 +223,10 @@ fn both_endpoints_always_carry_full_attribution() {
     assert_eq!(hb["payload"]["machine_id"], id.machine_id);
     assert_eq!(hb["payload"]["agent_version"], pquploader::config::VERSION);
     assert_eq!(hb["instrument_serial"], "SN-42");
-    assert!(hb["measured_at"].as_str().unwrap().ends_with('Z')
-        || hb["measured_at"].as_str().unwrap().contains('+'));
+    assert!(
+        hb["measured_at"].as_str().unwrap().ends_with('Z')
+            || hb["measured_at"].as_str().unwrap().contains('+')
+    );
 
     let (body, ct) = pquploader::backup::build_submission(
         &id,
@@ -208,7 +240,12 @@ fn both_endpoints_always_carry_full_attribution() {
     .finish();
     let text = String::from_utf8_lossy(&body);
     assert!(ct.starts_with("multipart/form-data; boundary="));
-    for needle in ["SN-42", id.machine_id.as_str(), pquploader::config::VERSION, "content_sha256"] {
+    for needle in [
+        "SN-42",
+        id.machine_id.as_str(),
+        pquploader::config::VERSION,
+        "content_sha256",
+    ] {
         assert!(text.contains(needle), "backup body missing {needle}");
     }
 }

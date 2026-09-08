@@ -34,9 +34,20 @@ fn save_then_load_round_trips() {
     let back = LocalBackupState::load_from(&p);
     assert_eq!(back.schema_version, SCHEMA_VERSION);
     assert_eq!(back.files.len(), 2);
-    assert_eq!(back.file("pqdevice_db").unwrap().last_backup_sha256, "d".repeat(64));
-    assert_eq!(back.last_heartbeat_utc.as_deref(), Some("2026-09-08T09:00:02Z"));
-    assert_eq!(back.last_backup_days().get("settings/Device.xml").map(String::as_str), Some("2026-09-08"));
+    assert_eq!(
+        back.file("pqdevice_db").unwrap().last_backup_sha256,
+        "d".repeat(64)
+    );
+    assert_eq!(
+        back.last_heartbeat_utc.as_deref(),
+        Some("2026-09-08T09:00:02Z")
+    );
+    assert_eq!(
+        back.last_backup_days()
+            .get("settings/Device.xml")
+            .map(String::as_str),
+        Some("2026-09-08")
+    );
 
     fs::remove_file(&p).ok();
 }
@@ -63,7 +74,11 @@ fn garbage_file_loads_as_empty_state() {
 #[test]
 fn truncated_json_loads_as_empty_state() {
     let p = scratch("trunc");
-    fs::write(&p, br#"{"schema_version":1,"files":{"pqdevice_db":{"last_backup_sha256":"#).unwrap();
+    fs::write(
+        &p,
+        br#"{"schema_version":1,"files":{"pqdevice_db":{"last_backup_sha256":"#,
+    )
+    .unwrap();
     let s = LocalBackupState::load_from(&p);
     assert!(s.files.is_empty());
     fs::remove_file(&p).ok();

@@ -62,8 +62,10 @@ fn recovered_heartbeat_updates_last_seen_with_no_backlog() {
         .create();
 
     let cfg = Config::with_base_url(server.url());
-    let mut state = LocalBackupState::default();
-    state.last_heartbeat_utc = Some("2026-09-07T00:00:00Z".to_string());
+    let mut state = LocalBackupState {
+        last_heartbeat_utc: Some("2026-09-07T00:00:00Z".to_string()),
+        ..LocalBackupState::default()
+    };
 
     let record = cycle::run_once(&cfg, &identity(), &mut state);
     assert!(record.heartbeat.ok);

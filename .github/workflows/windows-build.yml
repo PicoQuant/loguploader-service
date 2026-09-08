@@ -75,11 +75,8 @@ jobs:
             target
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
 
-      # fmt + clippy are informational until spec-002 T048 is closed by a maintainer with the
-      # toolchain (`cargo fmt --all` + `cargo clippy --fix`). Build + tests below stay blocking.
-      - name: fmt + clippy (informational — spec-002 T048)
+      - name: fmt + clippy
         if: steps.gate.outputs.go == 'true' && matrix.product == 'luminosa' && matrix.channel == 'stable'
-        continue-on-error: true
         run: |
           cargo fmt --all -- --check
           cargo clippy --all-targets -- -D warnings

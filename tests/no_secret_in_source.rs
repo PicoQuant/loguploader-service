@@ -15,7 +15,13 @@ fn scanned_files() -> Vec<PathBuf> {
     let root = manifest_dir();
     let mut out = Vec::new();
     collect(&root.join("src"), &mut out);
-    for name in ["Cargo.toml", "config.toml.example", ".env.example", "clippy.toml", "rustfmt.toml"] {
+    for name in [
+        "Cargo.toml",
+        "config.toml.example",
+        ".env.example",
+        "clippy.toml",
+        "rustfmt.toml",
+    ] {
         let p = root.join(name);
         if p.is_file() {
             out.push(p);
@@ -58,7 +64,9 @@ fn secret_needles() -> Vec<String> {
         for line in env.lines() {
             if let Some((k, v)) = line.split_once('=') {
                 let v = v.trim().trim_matches('"');
-                if k.trim().starts_with("TELEMETRY_FLEET_TOKENS_") && v.len() >= 12 && v != "replace-me"
+                if k.trim().starts_with("TELEMETRY_FLEET_TOKENS_")
+                    && v.len() >= 12
+                    && v != "replace-me"
                 {
                     for part in v.split(',') {
                         let part = part.trim();
@@ -100,7 +108,11 @@ fn version_output_never_contains_the_token() {
     let compiled = pquploader::config::FLEET_TOKEN;
     // `version --json` prints only "present"/"absent"
     // (structural assertion: the string "fleet_token" maps to a status, never the value)
-    let status = if compiled.is_empty() { "absent" } else { "present" };
+    let status = if compiled.is_empty() {
+        "absent"
+    } else {
+        "present"
+    };
     assert!(status == "present" || status == "absent");
     if !compiled.is_empty() {
         assert_ne!(status, compiled);

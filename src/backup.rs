@@ -53,7 +53,14 @@ pub fn run_pass(
 
     for file in resolved {
         let outcome = process_file(
-            &api, identity, state, ctx, &file.file_key, &file.abs_path, file.read_result, &today,
+            &api,
+            identity,
+            state,
+            ctx,
+            &file.file_key,
+            &file.abs_path,
+            file.read_result,
+            &today,
             &now_ts,
         );
         outcomes.push(outcome);
@@ -84,17 +91,29 @@ fn process_file(
             log::warn!("{file_key}: locked/torn, retry next cycle");
             ctx.note_blocked(file_key, "locked");
             ctx.note_failure(FailureCategory::FileLocked);
-            return outcome(file_key, FileAction::RetryLater, Some(FailureCategory::FileLocked));
+            return outcome(
+                file_key,
+                FileAction::RetryLater,
+                Some(FailureCategory::FileLocked),
+            );
         }
         ReadResult::Absent => {
             log::info!("{file_key}: absent this cycle");
             ctx.note_blocked(file_key, "absent");
-            return outcome(file_key, FileAction::Blocked, Some(FailureCategory::FileAbsent));
+            return outcome(
+                file_key,
+                FileAction::Blocked,
+                Some(FailureCategory::FileAbsent),
+            );
         }
         ReadResult::TooLarge(size) => {
             log::warn!("{file_key}: {size} bytes exceeds backup_max_bytes; skipped");
             ctx.note_blocked(file_key, "too_large");
-            return outcome(file_key, FileAction::Blocked, Some(FailureCategory::TooLarge));
+            return outcome(
+                file_key,
+                FileAction::Blocked,
+                Some(FailureCategory::TooLarge),
+            );
         }
     };
 
@@ -102,7 +121,7 @@ fn process_file(
     match decide_action(state.file(file_key), &sha256, today) {
         Decision::Unchanged => return outcome(file_key, FileAction::Unchanged, None), // FR-010
         Decision::SkippedToday => {
-            return outcome(file_key, FileAction::SkippedToday, None) // FR-011
+            return outcome(file_key, FileAction::SkippedToday, None); // FR-011
         }
         Decision::Send => {} // no state (first run, FR-016) or changed on an earlier day
     }
@@ -128,7 +147,11 @@ fn process_file(
             };
             // deduplicated: true is still success — advance the daily gate (FR-012).
             state.record_success(file_key, &sha256, today, now_ts);
-            log::info!("{file_key}: {} ({} bytes)", action_word(action), bytes.len());
+            log::info!(
+                "{file_key}: {} ({} bytes)",
+                action_word(action),
+                bytes.len()
+            );
             outcome(file_key, action, None)
         }
         Err(err) => {
@@ -139,11 +162,7 @@ fn process_file(
 }
 
 /// FR-012 / FR-014 / FR-027 failure routing.
-fn route_failure(
-    ctx: &mut CycleContext,
-    file_key: &str,
-    category: FailureCategory,
-) -> FileOutcome {
+fn route_failure(ctx: &mut CycleContext, file_key: &str, category: FailureCategory) -> FileOutcome {
     match category {
         // retried next cycle, no state change, not "blocked" in the heartbeat sense
         FailureCategory::NoNetwork | FailureCategory::BackendError => {

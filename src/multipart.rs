@@ -88,7 +88,9 @@ fn generate_boundary() -> String {
     let mut mixed = nanos ^ (stack_marker.rotate_left(17)) ^ 0x9E37_79B9_7F4A_7C15;
     let mut out = String::from("----pquploader-");
     for _ in 0..24 {
-        mixed = mixed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        mixed = mixed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let nibble = (mixed >> 124) as u8 & 0xF;
         out.push(char::from_digit(nibble as u32, 16).unwrap());
     }

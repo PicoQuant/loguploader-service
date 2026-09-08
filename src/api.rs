@@ -77,7 +77,9 @@ impl Api {
                     );
                     last = Some(err);
                     if retry {
-                        std::thread::sleep(Duration::from_secs(BACKOFF_SECS[(attempt - 1) as usize]));
+                        std::thread::sleep(Duration::from_secs(
+                            BACKOFF_SECS[(attempt - 1) as usize],
+                        ));
                         continue;
                     }
                     break;
@@ -163,9 +165,18 @@ mod tests {
     fn status_mapping_matches_contract() {
         assert_eq!(category_for_status(401), FailureCategory::Auth);
         assert_eq!(category_for_status(413), FailureCategory::TooLarge);
-        assert_eq!(category_for_status(422), FailureCategory::RejectedBadRequest);
-        assert_eq!(category_for_status(404), FailureCategory::RejectedBadRequest);
-        assert_eq!(category_for_status(400), FailureCategory::RejectedBadRequest);
+        assert_eq!(
+            category_for_status(422),
+            FailureCategory::RejectedBadRequest
+        );
+        assert_eq!(
+            category_for_status(404),
+            FailureCategory::RejectedBadRequest
+        );
+        assert_eq!(
+            category_for_status(400),
+            FailureCategory::RejectedBadRequest
+        );
         assert_eq!(category_for_status(503), FailureCategory::BackendError);
     }
 

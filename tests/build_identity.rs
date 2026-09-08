@@ -28,7 +28,10 @@ fn dirs_follow_the_product_name() {
 fn watched_set_is_the_fr008_table_without_logs() {
     let specs = Product::current().watched_files();
     let keys: Vec<_> = specs.iter().map(|s| s.file_key).collect();
-    assert_eq!(keys, ["pqdevice_db", "pqdevice_conf", "settings/", "usersettings/"]);
+    assert_eq!(
+        keys,
+        ["pqdevice_db", "pqdevice_conf", "settings/", "usersettings/"]
+    );
 
     assert_eq!(specs[0].root, FileRoot::InstallDir);
     assert_eq!(specs[0].kind, FileKind::Fixed);

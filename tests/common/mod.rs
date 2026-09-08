@@ -26,12 +26,8 @@ pub struct FakeRoots {
 
 impl FakeRoots {
     pub fn create(tag: &str) -> FakeRoots {
-        let base = std::env::temp_dir().join(format!(
-            "pqu_it_{}_{}_{}",
-            std::process::id(),
-            tag,
-            nanos()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("pqu_it_{}_{}_{}", std::process::id(), tag, nanos()));
         let program_files = base.join("ProgramFiles");
         let program_data = base.join("ProgramData");
         let product_dir = Product::current().dir_name();
@@ -44,8 +40,13 @@ impl FakeRoots {
                 .join("UserSettings"),
         )
         .unwrap();
-        std::fs::create_dir_all(program_data.join("PicoQuant").join(product_dir).join("Logs"))
-            .unwrap();
+        std::fs::create_dir_all(
+            program_data
+                .join("PicoQuant")
+                .join(product_dir)
+                .join("Logs"),
+        )
+        .unwrap();
 
         std::env::set_var("ProgramFiles", &program_files);
         std::env::set_var("ProgramData", &program_data);

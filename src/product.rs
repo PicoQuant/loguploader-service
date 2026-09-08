@@ -159,6 +159,9 @@ mod tests {
     #[test]
     fn watched_set_shape() {
         let keys: Vec<_> = WATCHED.iter().map(|s| s.file_key).collect();
-        assert_eq!(keys, ["pqdevice_db", "pqdevice_conf", "settings/", "usersettings/"]);
+        assert_eq!(
+            keys,
+            ["pqdevice_db", "pqdevice_conf", "settings/", "usersettings/"]
+        );
     }
 }

@@ -164,7 +164,12 @@ mod tests {
     fn round_trips() {
         let p = tmp("round");
         let mut s = LocalBackupState::default();
-        s.record_success("pqdevice_conf", &"a".repeat(64), "2026-09-08", "2026-09-08T08:00:00Z");
+        s.record_success(
+            "pqdevice_conf",
+            &"a".repeat(64),
+            "2026-09-08",
+            "2026-09-08T08:00:00Z",
+        );
         s.last_heartbeat_utc = Some("2026-09-08T08:00:01Z".to_string());
         s.save_to(&p).unwrap();
 
