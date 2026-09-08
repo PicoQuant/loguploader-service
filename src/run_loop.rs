@@ -105,17 +105,14 @@ fn install_ctrl_c(stop: Arc<AtomicBool>) {
     std::env::set_var("PQ_FOREGROUND", "1");
     let _ = CTRL_C_STOP.set(stop);
 
-    #[allow(non_camel_case_types)]
-    type BOOL = i32;
-    #[allow(non_camel_case_types)]
-    type DWORD = u32;
+    // minimal kernel32 binding (win32 BOOL = i32, DWORD = u32)
     extern "system" {
         fn SetConsoleCtrlHandler(
-            handler: Option<unsafe extern "system" fn(DWORD) -> BOOL>,
-            add: BOOL,
-        ) -> BOOL;
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
     }
-    unsafe extern "system" fn handler(_ctrl_type: DWORD) -> BOOL {
+    unsafe extern "system" fn handler(_ctrl_type: u32) -> i32 {
         if let Some(s) = CTRL_C_STOP.get() {
             s.store(true, Ordering::Relaxed);
         }

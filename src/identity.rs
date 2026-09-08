@@ -123,7 +123,7 @@ pub fn os_info() -> OsInfo {
     .to_string();
 
     #[cfg(windows)]
-    {
+    let (version, build) = {
         use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
         use winreg::RegKey;
 
@@ -147,15 +147,15 @@ pub fn os_info() -> OsInfo {
                     .unwrap_or_else(|_| "unknown".to_string()),
             };
         }
-        return OsInfo { version, build, arch };
-    }
+        (version, build)
+    };
     #[cfg(not(windows))]
-    {
-        OsInfo {
-            version: "non-windows".to_string(),
-            build: "0".to_string(),
-            arch,
-        }
+    let (version, build) = ("non-windows".to_string(), "0".to_string());
+
+    OsInfo {
+        version,
+        build,
+        arch,
     }
 }
 

@@ -134,14 +134,9 @@ impl Log for CompositeLogger {
 /// which we want verbatim, not through the `log!` formatting). Falls back to stdout if the
 /// file sink is unavailable so `once` still prints something useful.
 pub fn append_cycle_record(json_line: &str) {
-    if let Some(logger) = LOGGER.get() {
-        if let Some(file) = &logger.file {
-            if let Ok(mut f) = file.lock() {
-                let _ = f.write_line(json_line);
-                let _ = f.flush();
-                return;
-            }
-        }
+    if let Some(Some(Ok(mut f))) = LOGGER.get().map(|l| l.file.as_ref().map(|m| m.lock())) {
+        let _ = f.write_line(json_line);
+        let _ = f.flush();
     }
 }
 
