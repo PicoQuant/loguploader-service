@@ -171,7 +171,11 @@ red-first ordering but should be written alongside or before the code they cover
 - [X] T046 [P] Reconcile versioning: keep `VERSION` as the single source of truth consumed by `build.rs`; retire/port `tools/gen_build_versions.py`; update `tools/release.sh` for the Rust build (Constitution II).
 - [X] T047 [P] `README.MD` v2 section: per-product build, `config.toml`, service install/uninstall, Event Log + `cycles.log` + `state.json` locations, token rotation.
 - [X] T048 `cargo fmt --all -- --check` clean; `cargo clippy --all-targets -- -D warnings` clean (needless_return, upper_case_acronyms, field_reassign_with_default fixed). Both are blocking again in `windows-build.yml`. Verified locally on rustc/cargo 1.98.1 + MSVC 14.44.
-- [~] T049 Run `quickstart.md` end-to-end against `https://api.picoquant.com`. **Partial (2026-09-08):** live `once` on a Luminosa box — **heartbeat OK** (fleet token + `agent_status` payload accepted, `serial_source:"unknown"` path works). Backups initially 422'd on `file_key` casing → fixed (`sanitize_key_component`, commit 3cb3ddd). Re-test pending: rebuild + `once`, confirm `settings/*.xml` now `sent`, then verify byte-exact round trip via admin queries (SC-001, SC-002, SC-005).
+- [X] T049 `quickstart.md` E2E against `https://api.picoquant.com` — **verified 2026-09-08** (beta.2, machine_id `42db0590…`, `instrument_serial=unknown`):
+  - **Heartbeat** (SC-001/SC-002): admin telemetry list returns the `agent_status` record — `agent_version 2.0.0-beta.2`, `channel beta`, `auth_kind fleet`, `os 10.0.26200/x86_64`, `serial_source unknown`, `last_failure_category null`. The prior beta.1 record shows `rejected_bad_request` → confirms the `file_key` fix end-to-end.
+  - **Backups** (SC-003/SC-005): all 6 `settings/*.xml` stored with full attribution (machine_id, source_path, sha256, size, mtime, agent_version).
+  - **Byte-exact round trip**: `LastKnownGood.xml` — on-disk sha256 == backend `content_sha256` == downloaded `/backups/{id}/content` sha256 (`b72cde42…`, 77 bytes). `/backups/latest?file_key=` retrieval works.
+  - Not covered: real `PQDevice.db`/`.conf` (no instrument on the test box).
 - [X] T050 `cargo test` full pass — **77 tests, 0 failures** on CI (`windows-build.yml` luminosa/stable, run 34224467230): exactly-once-per-UTC-day (`tests/daily_limit_utc.rs`, SC-003/SC-004) and locked/oversized/rejected-never-blocks-others (`tests/failure_categories.rs` + `src/backup.rs` units, SC-012) both green.
 
 ---
