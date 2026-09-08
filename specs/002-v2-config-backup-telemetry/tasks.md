@@ -69,7 +69,7 @@ red-first ordering but should be written alongside or before the code they cover
 ### Implementation for User Story 1
 
 - [ ] T018 [US1] Create `src/telemetry.rs`: build the `agent_status` payload per `contracts/heartbeat-payload.schema.json` (`machine_id`, `agent_version`, `product`, `channel`, `serial_source`, `os{}`, `cycle{}`, `blocked_backups[]`, `last_backup_days`); `send_heartbeat(&Config, &Identity, &CycleContext, &Api) -> Result<(), FailureCategory>`. `channel` comes from `PQ_CHANNEL` (FR-002f, FR-004).
-- [ ] T019 [US1] Wire the heartbeat pass into `src/cycle.rs::run_once` (runs after the backup pass); record `heartbeat { ok, category }` in `CycleRecord`; update `state.last_heartbeat_utc` on success (FR-003, FR-004, FR-005).
+- [ ] T019 [US1] Wire the heartbeat pass into `src/cycle.rs::run_once` (runs after the backup pass); include `channel`, `cycle.ok`, `last_failure_category`, and `blocked_backups` in the payload (FR-002f); record `heartbeat { ok, category }` in `CycleRecord`; update `state.last_heartbeat_utc` on success (FR-003, FR-004, FR-005).
 - [ ] T020 [US1] Wire `once` and `debug` in `src/main.rs`: `once` = one `cycle::run_once` then print the `CycleRecord` as JSON and exit 0; `debug` = `run_loop::serve` in the foreground with Ctrl-C → stop.
 
 **Checkpoint**: `once` produces a real heartbeat in the backend; MVP demoable.
@@ -134,7 +134,7 @@ red-first ordering but should be written alongside or before the code they cover
 ### Implementation for User Story 4
 
 - [ ] T035 [US4] Finalize `build.rs`: `PQ_FLEET_TOKEN` = first comma-separated entry of `TELEMETRY_FLEET_TOKENS_<PRODUCT>`; hard error on empty in release; same token both channels; ensure the value is not echoed to build stdout/stderr or any emitted file (FR-023, FR-024, FR-024a).
-- [ ] T036 [US4] Rewrite `.github/workflows/windows-build.yml`: matrix `product: [luminosa, solira] × channel: [stable, beta]`; step passes `PQ_PRODUCT`, `PQ_CHANNEL`, and `secrets.TELEMETRY_FLEET_TOKENS_<PRODUCT>` (uppercased) as env to `cargo build --release`; upload one artifact per `(product, channel)`; add a "no secret in source" grep gate (FR-002b, FR-002e, FR-024).
+- [ ] T036 [US4] Rewrite `.github/workflows/windows-build.yml`: matrix `product: [luminosa, solira] × channel: [stable, beta]`; step passes `PQ_PRODUCT`, `PQ_CHANNEL`, and `secrets.TELEMETRY_FLEET_TOKENS_<PRODUCT>` (uppercased) as env to `cargo build --release`; upload one artifact per `(product, channel)` named per `contracts/cli.md` (`pquploader-<product>[-beta].exe`); add a "no secret in source" grep gate (FR-002b, FR-002e, FR-024).
 - [ ] T037 [US4] `src/main.rs` `version` subcommand: print product, channel, `PQ_VERSION`, `api_base_url`, and `fleet_token: present|absent` — never the value.
 - [ ] T038 [US4] Add a token-rotation runbook: `README.MD` section + cross-ref from `quickstart.md` (ship new build → backend accepts old + new → retire old value in `TELEMETRY_FLEET_TOKENS_<PRODUCT>`) (FR-025, SC-007).
 
@@ -158,7 +158,7 @@ red-first ordering but should be written alongside or before the code they cover
 - [ ] T041 [US5] Create `src/service.rs`: `windows-service` control handler — `START_PENDING → RUNNING`, `SERVICE_CONTROL_STOP` → set the stop flag and report `STOP_PENDING` then `STOPPED`; if started from a console, print the "must be started by the SCM / use `install`" guidance (v1 parity) (FR-028).
 - [ ] T042 [US5] `src/main.rs` `install` / `uninstall`: register service `PQUploader<Product>` (display `PicoQuant <Product> Log Uploader`, start = auto-delayed, account = LocalSystem) + the Event Log source; idempotent; `uninstall --purge` also removes `<data_dir>\v2agent\` (FR-028).
 - [ ] T043 [US5] In `src/run_loop.rs`, guarantee: stop flag checked every ≤1 s; `catch_unwind` per cycle re-enters the loop on the next interval; exactly one Event Log summary per cycle (Constitution I + IV, FR-029, FR-030).
-- [ ] T044 [US5] Create `installer/v2/pquploader-luminosa.iss` and `installer/v2/pquploader-solira.iss` (Inno Setup): install the exe + `config.toml.example`, run `install`, register the `\PicoQuant\LuminosaLogUploader\AutoUpdate` scheduled task + ship `updater/update.ps1`, support `/VERYSILENT`, keep v1-updater-compatible asset names — coordinate the migration surface with `specs/001-v2-remote-upgrade` (Constitution VI).
+- [ ] T044 [US5] Create the per-`(product,channel)` Inno Setup scripts under `installer/v2/` (4: `<product>[-beta].iss`), `OutputBaseFilename` per `contracts/cli.md` (`<Product> Log Uploader[ Beta] Setup`): install the exe + `config.toml.example`, run `install`, register the `\PicoQuant\LuminosaLogUploader\AutoUpdate` scheduled task + ship `updater/update.ps1`, support `/VERYSILENT`, keep the `…Setup.exe` token for the v1 updater's glob — coordinate the migration surface with `specs/001-v2-remote-upgrade` (Constitution VI).
 
 **Checkpoint**: installable, reboot-resilient, self-healing service.
 
@@ -166,7 +166,7 @@ red-first ordering but should be written alongside or before the code they cover
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T045 [P] Rewrite `.github/workflows/release.yml`: same `product × channel` matrix; a `vX.Y.Z-beta.N` tag builds only the `beta` artifacts and publishes a GitHub Release with `prerelease: true`; a `vX.Y.Z` tag builds the `stable` artifacts and publishes a normal release. Per-`(product,channel)` installer + `.sha256` + service exe with asset names the v1 updater consumes; `generate_release_notes: true` (Constitution Build section, VI; FR-005a–FR-005c in `specs/001`).
+- [ ] T045 [P] Rewrite `.github/workflows/release.yml`: same `product × channel` matrix; a `vX.Y.Z-beta.N` tag builds only the `beta` artifacts and publishes a GitHub Release with `prerelease: true`; a `vX.Y.Z` tag builds the `stable` artifacts and publishes a normal release. Publish per-`(product,channel)` installer + `.sha256` + service exe using the names in `contracts/cli.md` (installer keeps the `…Setup.exe` token; stable release contains both products); `generate_release_notes: true` (Constitution Build section, VI; FR-005a–FR-005c in `specs/001`).
 - [ ] T046 [P] Reconcile versioning: keep `VERSION` as the single source of truth consumed by `build.rs`; retire/port `tools/gen_build_versions.py`; update `tools/release.sh` for the Rust build (Constitution II).
 - [ ] T047 [P] `README.MD` v2 section: per-product build, `config.toml`, service install/uninstall, Event Log + `cycles.log` + `state.json` locations, token rotation.
 - [ ] T048 `cargo fmt --check` + `cargo clippy -- -D warnings`; fix findings.

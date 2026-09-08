@@ -18,12 +18,13 @@ and confirm the heartbeat and a config backup landed and are retrievable.
 ## 1. Build a product binary
 
 ```
-# build.rs reads PQ_PRODUCT + the matching token from .env
-PQ_PRODUCT=luminosa cargo build --release
+# build.rs reads PQ_PRODUCT + PQ_CHANNEL + the matching token from .env
+PQ_PRODUCT=luminosa PQ_CHANNEL=beta cargo build --release
 ```
 
-Expect: `target/release/pquploader-luminosa.exe`. A release build fails if the product is
-unset or the token is empty.
+Expect: `target/release/pquploader-luminosa-beta.exe` (drop `PQ_CHANNEL` or set it to
+`stable` for `pquploader-luminosa.exe`). A release build fails if the product or channel is
+invalid or the token is empty. See `contracts/cli.md` for all 4 variant names.
 
 Verify no secret in the tree:
 ```

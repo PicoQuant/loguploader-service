@@ -53,6 +53,11 @@
         "ok": { "type": "boolean", "description": "true if the cycle completed without an internal error" }
       }
     },
+    "last_failure_category": {
+      "type": ["string", "null"],
+      "enum": ["no_network", "authentication", "rejected_bad_request", "too_large", "backend_error", "file_locked", "file_absent", "internal", null],
+      "description": "the most recent submission-failure category this cycle, or null if the cycle had no failures (FR-002f, FR-027)"
+    },
     "blocked_backups": {
       "type": "array",
       "description": "watched files that could not be backed up this cycle (FR-007)",

@@ -36,29 +36,25 @@ public-share folder. Version 2 has a narrower purpose and an authenticated trans
 The v1 → v2 unattended remote-upgrade path is specified separately in
 `specs/001-v2-remote-upgrade/spec.md` and is a prerequisite for shipping v2.
 
-### Current backend state (from `https://api.picoquant.com/docs`, checked 2026-09-08)
+### Backend support (deployed and verified — `api.picoquant.com` v2.2.0-beta.2, 2026-09-08)
 
-- `POST /api/v2/products/{product_key}/telemetry` exists; `instrument_serial` is an optional
-  body field (≤128 chars), alongside `measurement_type`, `payload`, `meta`.
-- Token minting (`POST /api/v2/products/{product_key}/telemetry/tokens`) caps `ttl_seconds` at
-  **604800 (7 days)** — there is **no non-expiring token today**.
-- There is **no backup / file-upload endpoint today**.
-- Admin read/list/revoke endpoints exist under `X-ADMIN-API-KEY`.
+The three backend capabilities this spec depends on were specified in
+`specs/003-backend-api-support/backend-changes.md`, implemented, and **verified end-to-end**
+against the live backend in this session (heartbeat submit, backup submit incl. dedupe,
+missing-serial `422`, admin list/latest/content with byte-exact round trip). The exact
+request/response shapes the agent uses are in `contracts/backend-api.md`.
 
-### Backend changes this spec depends on (agreed with the backend owner, 2026-09-08)
-
-1. **A fleet-wide, non-expiring submission token per product** (`luminosa`, `solira`). It is
-   NOT bound to one instrument; the instrument serial travels in the request body and the
-   backend trusts it for this token kind. **No per-machine provisioning** — every v2 build for
-   a product carries that product's token, injected at build time from a secret (never
-   committed). The token is rotatable (the backend accepts more than one valid value at once)
-   so a leaked token can be retired via a coordinated v2 update. (FR-020–FR-026)
-2. **A dedicated backup endpoint** that accepts a configuration file's contents plus
-   attribution metadata, retains it durably (not subject to the 30-day hot-telemetry pruning),
-   and lets the latest backup of each `(product, instrument, file)` tuple be retrieved.
-   (FR-017, FR-027)
-3. **The submission path usable with the fleet token, not the admin key** — the fleet agent
-   must never carry `X-ADMIN-API-KEY` (which grants read and revoke across the product).
+1. **Fleet-wide, non-expiring submission token per product** (`luminosa`; `solira` pending —
+   see Open Items). Not instrument-bound; the serial travels in the request body. No
+   per-machine provisioning — every v2 build carries its product's token, injected at build
+   from a secret (never committed). Rotatable: the backend accepts more than one valid value
+   at once (`TELEMETRY_FLEET_TOKENS_<PRODUCT>`). (FR-020–FR-026)
+2. **Dedicated backup endpoint** `POST /api/v2/products/{product}/backup` — accepts a file's
+   contents + attribution, integrity-checked and de-duplicated by `content_sha256`, retained
+   durably (not on the 30-day telemetry prune), latest per `(product, instrument, file)`
+   retrievable via admin endpoints. (FR-017, FR-027)
+3. **Submission path works with the fleet token, not the admin key** — verified; the agent
+   never carries `X-ADMIN-API-KEY`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -270,8 +266,12 @@ lowest risk.
   `beta`). CI produces a separate artifact per product per channel (4 builds initially). The
   channel MUST NOT be switchable at runtime, via config, or from the backend.
 - **FR-002f**: The heartbeat MUST report the build's channel so a maintainer can identify the
-  beta cohort and watch its health (the beta-to-stable promotion gate lives in
-  `specs/001-v2-remote-upgrade`).
+  beta cohort. The health signals v2 provides per heartbeat are: the last cycle's `ok` flag,
+  the current `blocked_backups` list, and the most recent submission-failure category. The
+  Sev-1 conditions the promotion gate keys on that v2 does **not** send directly — a stopped
+  service, a crash-loop — are derived by `specs/001-v2-remote-upgrade`'s fleet-status view
+  from heartbeat **absence / gap patterns**. v2's only obligation is to emit an accurate
+  heartbeat every cycle while it is running.
 
 #### Telemetry heartbeat
 
@@ -395,8 +395,10 @@ lowest risk.
 - **FR-031**: Overlapping cycles MUST NOT cause double submissions or corrupt local
   backup-state; at most one cycle acts at a time.
 - **FR-032**: All once-per-day logic MUST be evaluated in UTC.
-- **FR-033**: The heartbeat interval and backup-check interval MUST be changeable without a
-  code change, via local configuration on the device (consistent with how v1 was configured).
+- **FR-033**: v2 runs a single work cycle (backup pass + heartbeat) on one recurring
+  **cycle interval**. That interval MUST be changeable without a code change, via local
+  configuration on the device (consistent with how v1 was configured). There is no separate
+  heartbeat vs backup-check cadence — both happen every cycle.
 - **FR-034**: Local state that must survive service restarts, reboots, and v2 self-updates:
   the per-file last-successful-backup fingerprint and UTC day, and recent cycle records.
 
@@ -437,7 +439,7 @@ lowest risk.
 ### Measurable Outcomes
 
 - **SC-001**: 100% of v2 machines with network access have a backend telemetry record no older
-  than one heartbeat interval plus a small margin.
+  than one cycle interval plus a small margin.
 - **SC-002**: A maintainer can determine any reporting machine's current version and last-seen
   time from backend queries within 1 business day, without contacting the customer.
 - **SC-003**: For a watched file that changes on a given UTC day, exactly one backup of that
@@ -454,9 +456,10 @@ lowest risk.
   a human touching it (the non-expiring token makes this the expected steady state).
 - **SC-008a**: Every Luminosa machine reports to the `luminosa` bucket and every Solira
   machine to the `solira` bucket — 0 cross-tagged submissions.
-- **SC-008b**: Every heartbeat carries the build's channel; a maintainer can list the beta
-  cohort and its per-machine health from telemetry alone (feeds the promotion gate in
-  `specs/001-v2-remote-upgrade`).
+- **SC-008b**: Every heartbeat carries the build's channel and the per-cycle health signals
+  of FR-002f (last `cycle.ok`, `blocked_backups`, last failure category); a maintainer can
+  list the beta cohort and each machine's most recent status from telemetry alone. (Deriving
+  "stopped" / "crash-loop" from heartbeat gaps for the promotion gate is `specs/001`.)
 - **SC-009**: A transient backend outage of up to 24 hours results in no lost heartbeat state
   and no lost backup of a changed file once connectivity returns.
 - **SC-010**: The service sustains continuous unattended operation across reboots and
@@ -467,16 +470,15 @@ lowest risk.
 
 ## Assumptions
 
-- Product buckets `luminosa` and `solira` are (or will be) listed in the backend's
-  `ALLOWED_PRODUCTS`.
-- The backend owner delivers the agreed changes before v2 ships: a per-product fleet-wide
-  non-expiring token, a dedicated backup endpoint, and a submission path that works with the
-  fleet token rather than the admin key.
+- Backend support for `luminosa` (fleet token, backup endpoint, fleet-token submission path)
+  is **live and verified** (v2.2.0-beta.2). `solira` must still be added to the backend's
+  `ALLOWED_PRODUCTS` with its own `TELEMETRY_FLEET_TOKENS_SOLIRA` before the Solira build
+  ships (Open Items).
 - The Luminosa watched set is fixed in FR-008 from the v1 source. The Solira set is assumed to
   mirror it with the path segment swapped, pending confirmation (FR-008).
 - Machine identifier is obtained as in v1 (OS machine GUID). Instrument serial per FR-009a.
-- Heartbeat and backup-check interval defaults are on the order of v1's cycle (minutes to
-  hourly); exact values set during planning.
+- The single cycle interval default is on the order of v1's cycle (minutes to hourly);
+  planning sets it to 30 minutes (`plan.md` / `research.md` D11).
 - v2 is delivered to existing machines through `specs/001-v2-remote-upgrade`. Because each
   product's token is fleet-wide and build-injected, that upgrade does not provision anything
   per-machine for v2.

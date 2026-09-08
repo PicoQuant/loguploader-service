@@ -107,7 +107,8 @@ Envelope: `measurement_type = "agent_status"`, `measured_at` = cycle-start RFC33
 | `channel` | enum `stable` \| `beta` | `PQ_CHANNEL`; feeds spec 001's promotion gate (FR-002f) |
 | `serial_source` | enum `file` \| `unknown` | FR-009a / US3 scenario 3 |
 | `os` | object `{ version, build, arch }` | from `GetVersionEx`/`RtlGetVersion` + arch |
-| `cycle` | object `{ started_utc, duration_ms, ok }` | last cycle health |
+| `cycle` | object `{ started_utc, duration_ms, ok }` | last cycle health (FR-002f) |
+| `last_failure_category` | `FailureCategory` \| null | most recent submission failure this cycle, or null (FR-002f, FR-027) |
 | `blocked_backups` | array of `{ file_key, reason }` | reason ∈ `locked` \| `absent` \| `too_large` \| `rejected` (FR-007) |
 | `last_backup_days` | map `file_key` → `YYYY-MM-DD` | optional; helps the maintainer see freshness |
 

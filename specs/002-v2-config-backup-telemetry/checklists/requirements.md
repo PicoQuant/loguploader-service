@@ -67,3 +67,15 @@ allows a compiled binary; Build section adds the staged-rollout / beta-channel m
 in FR-004 + the heartbeat schema, SC-008b. Build carries a compiled-in `stable`/`beta`
 channel; CI matrix is product × channel (4 artifacts); the agent reports its channel in every
 heartbeat. The channel-aware updater + beta→stable promotion gate live in `specs/001`.
+
+**/speckit-analyze 2026-09-08 — MEDIUM findings remediated (F1–F4):**
+- F1: FR-033 + Assumptions + SC-001 → one **cycle interval**, not two (matches plan D11).
+- F2: "Current backend state" / "Backend changes" → rewritten as "Backend support (deployed
+  and verified — v2.2.0-beta.2)". `solira` enablement remains the only open backend item.
+- F3: 4-variant artifact naming (`pquploader-<product>[-beta].exe`, `… Setup.exe`) written
+  into `contracts/cli.md`; T036/T044/T045 reference it. Flagged for spec 001: the v1 updater
+  must become product-aware (stable release contains both products' installers).
+- F4: FR-002f + SC-008b now define the per-heartbeat health signals (`cycle.ok`,
+  `blocked_backups`, `last_failure_category`); "stopped/crash-loop" is derived in spec 001
+  from heartbeat gaps. Added `last_failure_category` to the heartbeat schema + data-model.
+- LOW findings F5–F10 left as-is (benign / acknowledged in the docs).
