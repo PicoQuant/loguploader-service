@@ -263,7 +263,9 @@ Layout — one folder per physical machine:
 
 Re-runs are incremental (an artifact already in `manifest.json` is skipped, no hashing) and
 append-only — **no prune / retention in this increment**. Overlapping runs: the second logs
-"another run in progress" and exits 0.
+"another run in progress" and exits 0. If a run reports `skipped=N` with a `#` line about an
+"old archive layout", delete that archive root (an earlier version used a different layout)
+and re-run into a fresh one.
 
 **Exit codes**: `0` success / nothing new / another run already in progress · `1` partial
 (≥1 artifact failed) · `2` fatal (no admin key, no product reachable, archive not writable).

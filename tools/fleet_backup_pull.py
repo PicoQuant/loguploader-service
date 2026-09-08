@@ -501,6 +501,7 @@ class ProductResult:
     artifacts_added: int = 0
     artifacts_failed: int = 0
     pruned: int = 0
+    skipped_machines: int = 0  # e.g. a machine folder blocked by a stale-layout file
 
 
 @dataclass
@@ -533,7 +534,11 @@ class RunReport:
         auth_denied = [p for p in self.products if not p.accessible and not p.sweep_failed]
         if self.products and len(auth_denied) == len(self.products):
             return 2
-        if self.artifacts_failed > 0 or any(p.sweep_failed for p in self.products):
+        if (
+            self.artifacts_failed > 0
+            or any(p.sweep_failed for p in self.products)
+            or any(p.skipped_machines for p in self.products)
+        ):
             return 1
         return 0
 
@@ -575,6 +580,16 @@ def discover_and_group(api, products: list[str], serials: list[str],
 def pull_machine(api, product: str, serial: str, machine_id: str, rows: list[dict],
                  out_root: Path, pr: ProductResult, *, rebuild: bool, quiet: bool) -> None:
     machine_dir = out_root / product / safe_segment(serial) / safe_segment(machine_id)
+
+    # A path we need as a directory already exists as a file — almost always a pre-machine-id
+    # ("seed") archive layout. Skip this machine cleanly; do not wedge the whole run.
+    blocker = _first_nondir_component(machine_dir, out_root)
+    if blocker is not None:
+        pr.skipped_machines += 1
+        _detail(quiet, f"# {product}/{serial}/{machine_id}  skipped: {blocker} is a file, "
+                       f"not a directory (old archive layout? remove it or use a fresh --out)")
+        return
+
     if rebuild:
         m = rebuild_manifest_from_disk(machine_dir, product, serial, machine_id)
     else:
@@ -663,6 +678,20 @@ def _detail(quiet: bool, line: str) -> None:
         print(line, file=sys.stderr)
 
 
+def _first_nondir_component(target: Path, root: Path) -> Path | None:
+    """The first path component from `root`..`target` that exists but is not a directory."""
+    try:
+        rel = target.relative_to(root)
+    except ValueError:
+        rel = Path(*target.parts[1:]) if target.is_absolute() else target
+    cur = root
+    for part in rel.parts:
+        cur = cur / part
+        if cur.exists() and not cur.is_dir():
+            return cur
+    return None
+
+
 # --------------------------------------------------------------------------- output
 
 
@@ -676,10 +705,13 @@ def print_summary(report: RunReport) -> None:
                 f"  {p.product:<9}: ok        machines={p.machines_seen}  "
                 f"added={p.artifacts_added}  failed={p.artifacts_failed}"
                 + (f"  pruned={p.pruned}" if p.pruned else "")
+                + (f"  skipped={p.skipped_machines}" if p.skipped_machines else "")
             )
+    skipped = sum(p.skipped_machines for p in report.products)
     print(
         f"totals: machines={report.machines_seen}  "
         f"artifacts added={report.artifacts_added}  failed={report.artifacts_failed}"
+        + (f"  machines skipped={skipped}" if skipped else "")
     )
 
 

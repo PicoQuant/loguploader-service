@@ -280,6 +280,19 @@ class TestPull(Base):
         self.assertEqual(report.products[0].artifacts_failed, 0)
         self.assertEqual(report.exit_code, 0)
 
+    def test_stale_layout_file_blocks_machine_cleanly(self):
+        # a pre-machine-id ("seed") archive left <serial> as a *file*
+        (self.tmp / "luminosa" / "SN-1").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "luminosa" / "SN-1").write_bytes(b"stale seed mirror")
+        api = FakeApi({"luminosa": [[make_row("id-1", content=b"conf")]]})
+        report = self.run_pull(api)
+        pr = report.products[0]
+        self.assertEqual(pr.skipped_machines, 1)
+        self.assertEqual(pr.artifacts_added, 0)
+        self.assertEqual(pr.artifacts_failed, 0)
+        self.assertEqual(report.exit_code, 1)
+        self.assertEqual(api.download_calls, [])  # nothing attempted for that machine
+
 
 # --------------------------------------------------------------------------- T019
 
