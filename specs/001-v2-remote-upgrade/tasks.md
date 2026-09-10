@@ -14,6 +14,34 @@ pytest for `fleet-status.py`, and a manual failure-injection matrix for the inst
 Luminosa v2 keeps every v1 identifier (research D4). The migration runs inside the v2
 installer `[Code]`, invoked by the *fixed* fielded `update.ps1`.
 
+---
+
+## Amendment 2026-09-10 — channel-aware `update.ps1` landed ahead of the rest
+
+The v2 **beta cohort** needed to self-update beta→beta before the full US1/US2 installer
+work (health-check, rollback, `SelfHealOnBoot`, migration surface) is built. Delivered as a
+scoped slice:
+
+- **[X] T002 / T005** — `updater/update.ps1` is now the channel-aware rewrite (dot-source-safe
+  helpers `Select-Release` / `Select-Asset` / `Test-ShouldUpdate` / `Compare-VersionFallback`);
+  `tests/updater/update.Tests.ps1` + `fixtures/releases-{latest,list}.json` (Pester, run in
+  `windows-build.yml`).
+- **[~] T017 / T018 / T019** — covered by `update.Tests.ps1` except: no `.sha256`
+  *fixture-file* integrity case (the mismatch path is exercised at runtime, not unit-tested);
+  the `is-newer` path itself is Rust-unit-tested in `src/upgrade.rs`.
+- **[~] T020** — steps 1–8 + 10 of `contracts/updater-cli.md` done (resolve product/channel
+  via `version --json`, per-channel GitHub query, product asset + `.sha256`, `is-newer`
+  decision with `[Version]`/string fallback, SHA-256 verify → `integrity_failed` + exit 0,
+  `& exe stop` → `Setup.exe /VERYSILENT` → `& exe start`, best-effort `upgrade-report`).
+  **Not done**: `SelfHealOnBoot` (needs the installer bundle); the installer's own
+  snapshot/health/rollback so step 9 is just "restart the on-disk exe", not a true rollback.
+- **[X] T043** — `installer/v2/common.iss` `CreateAutoUpdateTask` now registers **both**
+  `\PicoQuant\<Product>LogUploader\AutoUpdate` (`/SC ONSTART /DELAY 0000:30`) and
+  `…\AutoUpdateDaily` (`/SC DAILY /ST 03:00`); `DeleteAutoUpdateTask` removes both.
+
+Still open for a working unattended v1→v2 hop and safe v2→v2.x: T001, T007–T016, T020
+(remainder), T021–T042, T044–T053.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: different file, no incomplete dependency.

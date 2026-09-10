@@ -81,6 +81,14 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --all-targets -- -D warnings
 
+      - name: Pester (updater/update.ps1)
+        if: steps.gate.outputs.go == 'true' && matrix.product == 'luminosa' && matrix.channel == 'stable'
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.0
+          $r = Invoke-Pester -Path tests/updater -Output Detailed -PassThru
+          if ($r.FailedCount -gt 0) { throw "$($r.FailedCount) Pester test(s) failed" }
+
       - name: Build ${{ matrix.product }} / ${{ matrix.channel }}
         if: steps.gate.outputs.go == 'true'
         shell: pwsh

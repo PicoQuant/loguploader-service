@@ -23,6 +23,8 @@
 #define MyOutputBase MyProduct + " Log Uploader" + MyChannelSuffixSpace + " Setup"
 ; v1 fielded task for Luminosa is exactly \PicoQuant\LuminosaLogUploader\AutoUpdate
 #define MyTaskName "\PicoQuant\" + MyProduct + "LogUploader\AutoUpdate"
+; v2 adds a daily trigger so a rarely-rebooted box still checks (spec 001 FR-005, research D10)
+#define MyTaskNameDaily "\PicoQuant\" + MyProduct + "LogUploader\AutoUpdateDaily"
 #define MyDataDir "{commonappdata}\PicoQuant\" + MyProduct
 
 [Setup]
@@ -78,22 +80,32 @@ begin
   SaveStringToFile(LogPath, S + #13#10, True);
 end;
 
-function CreateAutoUpdateTask(): Boolean;
-var ResultCode: Integer; Tr, Params: string; Started: Boolean;
+function SchtasksExec(const Params: string): Boolean;
+var ResultCode: Integer; Started: Boolean;
 begin
-  Tr := '\"powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"' + ExpandConstant('{app}\updater\update.ps1') + '\"';
-  Params := '/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN "{#MyTaskName}" /TR "' + Tr + '"';
-  WriteTaskLog('Creating task: ' + Params);
+  WriteTaskLog('schtasks ' + Params);
   Started := Exec(ExpandConstant('{sys}\schtasks.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  WriteTaskLog('schtasks started=' + IntToStr(Ord(Started)) + ' exit=' + IntToStr(ResultCode));
+  WriteTaskLog('  started=' + IntToStr(Ord(Started)) + ' exit=' + IntToStr(ResultCode));
   Result := Started and (ResultCode = 0);
 end;
 
-function DeleteAutoUpdateTask(): Boolean;
-var ResultCode: Integer;
+function CreateAutoUpdateTask(): Boolean;
+var Tr: string; OkBoot, OkDaily: Boolean;
 begin
-  Result := Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /F /TN "{#MyTaskName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Result := Result and (ResultCode = 0);
+  Tr := '\"powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"' + ExpandConstant('{app}\updater\update.ps1') + '\"';
+  { schtasks takes one schedule per /Create, so the boot + daily triggers are two tasks. }
+  { The ONSTART task keeps its exact v1 name/trigger for the Luminosa migration surface. }
+  OkBoot  := SchtasksExec('/Create /F /RL HIGHEST /RU SYSTEM /SC ONSTART /DELAY 0000:30 /TN "{#MyTaskName}" /TR "' + Tr + '"');
+  OkDaily := SchtasksExec('/Create /F /RL HIGHEST /RU SYSTEM /SC DAILY /ST 03:00 /TN "{#MyTaskNameDaily}" /TR "' + Tr + '"');
+  Result := OkBoot and OkDaily;
+end;
+
+function DeleteAutoUpdateTask(): Boolean;
+begin
+  { best effort - a missing task is not an error }
+  SchtasksExec('/Delete /F /TN "{#MyTaskName}"');
+  SchtasksExec('/Delete /F /TN "{#MyTaskNameDaily}"');
+  Result := True;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

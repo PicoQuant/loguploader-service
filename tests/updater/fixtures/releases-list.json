@@ -1,0 +1,42 @@
+[
+  {
+    "tag_name": "v2.0.0",
+    "prerelease": false,
+    "draft": false,
+    "published_at": "2026-09-20T09:00:00Z",
+    "assets": [
+      { "name": "Luminosa.Log.Uploader.Setup.exe", "browser_download_url": "https://example.invalid/lum-stable-setup" },
+      { "name": "Luminosa.Log.Uploader.Setup.exe.sha256", "browser_download_url": "https://example.invalid/lum-stable-sha" }
+    ]
+  },
+  {
+    "tag_name": "v2.0.0-beta.6",
+    "prerelease": true,
+    "draft": false,
+    "published_at": "2026-09-15T09:00:00Z",
+    "assets": [
+      { "name": "Luminosa.Log.Uploader.Beta.Setup.exe", "browser_download_url": "https://example.invalid/lum-b6-setup" },
+      { "name": "Luminosa.Log.Uploader.Beta.Setup.exe.sha256", "browser_download_url": "https://example.invalid/lum-b6-sha" },
+      { "name": "Solira.Log.Uploader.Beta.Setup.exe", "browser_download_url": "https://example.invalid/sol-b6-setup" },
+      { "name": "Solira.Log.Uploader.Beta.Setup.exe.sha256", "browser_download_url": "https://example.invalid/sol-b6-sha" },
+      { "name": "pquploader-luminosa-beta.exe", "browser_download_url": "https://example.invalid/lum-b6-bare" }
+    ]
+  },
+  {
+    "tag_name": "v2.0.0-beta.5",
+    "prerelease": true,
+    "draft": false,
+    "published_at": "2026-09-10T09:00:00Z",
+    "assets": [
+      { "name": "Luminosa.Log.Uploader.Beta.Setup.exe", "browser_download_url": "https://example.invalid/lum-b5-setup" },
+      { "name": "Luminosa.Log.Uploader.Beta.Setup.exe.sha256", "browser_download_url": "https://example.invalid/lum-b5-sha" }
+    ]
+  },
+  {
+    "tag_name": "v2.1.0-beta.1-draft",
+    "prerelease": true,
+    "draft": true,
+    "published_at": "2026-09-18T09:00:00Z",
+    "assets": []
+  }
+]

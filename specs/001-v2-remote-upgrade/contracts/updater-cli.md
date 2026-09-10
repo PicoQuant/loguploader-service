@@ -1,5 +1,11 @@
 # Contract — `updater/update.ps1` (rewritten, channel-aware)
 
+> **Status 2026-09-10**: the channel-aware selection + verify + apply path (steps 1–8, 10) is
+> implemented and Pester-tested (`tests/updater/`). **Not yet built**: step 6 Authenticode
+> (no cert — C2), `SelfHealOnBoot`, and the installer-side snapshot/health/rollback that
+> step 9 assumes — step 9 currently only restarts the exe already on disk. See
+> `tasks.md` → "Amendment 2026-09-10".
+
 Runs as SYSTEM from the scheduled task `\PicoQuant\LuminosaLogUploader\AutoUpdate`
 (`/SC ONSTART /DELAY 0000:30`, plus `/SC DAILY` once the machine is on v2 — research D10).
 Replaces the v1 `update.ps1` at the same path so the task's `/TR` never changes.

@@ -104,33 +104,44 @@ loguploaderservice.exe debug
 
 ## Auto-update (Windows)
 
-The installer installs an updater script to:
+The installer drops `{app}\updater\update.ps1` and registers two SYSTEM scheduled tasks that
+run it (`<Product>` is `Luminosa` or `Solira`):
 
-- `{app}\updater\update.ps1`
+- `\PicoQuant\<Product>LogUploader\AutoUpdate` — at startup, +30 s delay
+- `\PicoQuant\<Product>LogUploader\AutoUpdateDaily` — daily at 03:00
 
-and creates a Scheduled Task that runs at boot (with a delay) and updates from the latest GitHub Release:
+**Channel-aware** (`updater/update.ps1`): the script reads the machine's channel from
+`pquploader.exe version --json` and follows only that channel — the two never cross
+(spec 001 FR-005b):
 
-- Task name: `\PicoQuant\LuminosaLogUploader\AutoUpdate`
-- Trigger: at startup
-- Action: runs `powershell.exe ... updater\update.ps1`
+| channel | follows | notes |
+|---|---|---|
+| `stable` | GitHub `/releases/latest` | prereleases are excluded, as in v1 |
+| `beta` | the newest `*-beta.N` **prerelease** | so a beta cohort self-updates beta→beta |
 
-Updater logs:
+The version decision uses `pquploader.exe is-newer <tag>` (full SemVer precedence incl.
+prerelease); a pre-v2 exe falls back to a numeric/string compare. Integrity is a SHA-256
+compare against the release's `.sha256` asset. On a successful apply the updater POSTs an
+`upgrade_attempt` telemetry record (`upgrade-report`).
 
-- `C:\ProgramData\PicoQuant\LuminosaLogUploader\update\update.log`
+> Not yet implemented (spec 001 US1/US2): post-install health check + automatic rollback,
+> `SelfHealOnBoot`, the v1→v2 migration surface. A bad beta stays installed until a newer
+> good beta is published.
 
-Installer task creation logs:
+Logs (under the product data dir):
 
-- `C:\ProgramData\PicoQuant\LuminosaLogUploader\update\installer_task.log`
+- `C:\ProgramData\PicoQuant\<Product>\update\update.log` — updater runs
+- `C:\ProgramData\PicoQuant\<Product>\update\installer_task.log` — installer task registration
 
-Troubleshooting:
-
-- If the task is missing, run (as Administrator):
+Troubleshooting (run as Administrator):
 
 ```
 schtasks /Query /TN "\PicoQuant\LuminosaLogUploader\AutoUpdate" /V /FO LIST
+schtasks /Query /TN "\PicoQuant\LuminosaLogUploader\AutoUpdateDaily" /V /FO LIST
+schtasks /Run   /TN "\PicoQuant\LuminosaLogUploader\AutoUpdateDaily"   # force a check now
 ```
 
-- If task creation fails, check `installer_task.log` for the `schtasks` command and exit code.
+The updater's Pester tests live in `tests/updater/`: `Invoke-Pester -Path tests/updater`.
 
 ## Logs
 
