@@ -58,6 +58,41 @@ sha256sum "./fleet-backups/luminosa/<serial>/<machine-id>/_versions/<rel>/<recei
 Expected: all three digests equal. (Demonstrated this session — `LastKnownGood.xml`,
 `b72cde42…`, disk == backend metadata == downloaded content, 77 bytes.)
 
+## 3b. Laser-power measurement records (US2)
+
+The default run (step 1) already pulled `powermeter`. Check one system's records:
+
+```
+python tools/fleet_backup_pull.py --out ./fleet-backups --product powermeter          # first pull
+python tools/fleet_backup_pull.py --out ./fleet-backups --product powermeter --quiet  # re-run: records=0
+```
+
+Expected:
+- first run summary line `powermeter: ok  systems=<n>  records=<m>`, exit `0`
+- a folder per system — `./fleet-backups/powermeter/<system_serial>/` (standalone) or
+  `./fleet-backups/<product>/<system_serial>/_powermeter/` when that instrument was also
+  archived by step 1 — each with `manifest.json`, `records/<measured_at>__<id8>.json` per
+  record, and `<measurement_type>.latest.json`
+- the re-run shows `records=0` and changes no file
+
+Byte-exact check against the backend list row:
+
+```
+set -a; . ./.env; set +a
+API=https://api.picoquant.com ; ADMIN="$EXPECTED_ADMIN_API_KEY"
+SERIAL=<system_serial> ; ID=<record id from a manifest entry>
+
+curl -s -H "X-ADMIN-API-KEY: $ADMIN" \
+  "$API/api/v2/admin/products/powermeter/telemetry?system_serial=$SERIAL&limit=1000" \
+| python3 -c "import sys,json; d=json.load(sys.stdin); \
+r=[x for x in d['records'] if x['id']=='$ID'][0]; \
+f=json.load(open([p for p in __import__('glob').glob('./fleet-backups/**/$SERIAL/**/records/*$( echo $ID | cut -c1-8 )*.json', recursive=True)][0])); \
+print('match:', r==f)"
+```
+
+Expected: `match: True`. (Demonstrated 2026-09-10 — system `1051032`, record
+`76d36f96…`, archived JSON == backend list row.)
+
 ## 4. Append-only after a backend prune (simulated)
 
 - Note a file the archive holds several versions of.
@@ -88,11 +123,16 @@ Covers, without touching the real backend: manifest-as-cursor incremental skip; 
 mismatch → not archived + run continues; `rel(source_path)` derivation; manifest round-trip +
 rebuild-from-filenames; lock contention → exit 0; a product returning `403` → skipped, the
 other still archived; paging; exit-code selection; admin-key redaction from all output.
+For **US2**: power-record filename; append-only commit; incremental skip by `id`; paging;
+nest-vs-standalone location + location pinned once chosen; `<measurement_type>.latest.json`
+mirror; manifest rebuild from `records/*.json`; `unknown` system serial; `powermeter`
+inaccessible → skipped; end-to-end + key redaction.
 
 ## Done when
 
 - Step 1 produces a populated archive; step 2 adds and changes nothing.
 - Step 3's three digests match.
+- Step 3b: power records archived, re-run adds nothing, one record byte-matches the backend.
 - Step 4: an archived version survives a backend prune.
 - Step 5: the second concurrent run exits 0 and touches nothing.
 - `python -m unittest discover -s tools` passes.

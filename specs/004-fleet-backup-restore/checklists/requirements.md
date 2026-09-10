@@ -38,6 +38,14 @@
 - **Clarified 2026-09-08** (3 questions): archive is append-only with no prune/retention this
   increment; overlapping runs skip and exit 0; archive layout is
   `<product>/<serial>/<machine-id>/…` (one folder = one physical machine).
+- **Extended 2026-09-10 — US2**: the pull also archives the `powermeter` product's laser-power
+  measurement records (every `measurement_type`), keyed by `system_serial`. Clarified (3
+  questions): spec-and-implement together; whole `powermeter` product, not just
+  `combiner_power`; nest under `<product>/<serial>/_powermeter/` when that instrument folder
+  exists, else standalone `powermeter/<serial>/`. Resolved by live check: the telemetry list
+  row carries the full `payload` (no content sub-endpoint, no backend hash), and `powermeter`
+  telemetry *is* on the backend prune loop — so archiving it is load-bearing. `agent_status` /
+  `upgrade_attempt` heartbeats stay out of scope.
 - The one remaining Open Item (confirm backend retention parameters with the backend team)
   does not block planning — it only sets an operator-guidance number, not tool behaviour. The
   earlier open item about the admin list endpoint returning full history was resolved by live

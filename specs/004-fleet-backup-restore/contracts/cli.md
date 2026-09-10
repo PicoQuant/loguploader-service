@@ -1,7 +1,7 @@
 # Contract — CLI (`tools/fleet_backup_pull.py`)
 
 Invoked by a maintainer or an external scheduler (cron). One command, one job: pull new
-config-backup artifacts into the local archive.
+config-backup artifacts **and new laser-power measurement records** into the local archive.
 
 ## Invocation
 
@@ -12,8 +12,8 @@ python tools/fleet_backup_pull.py [options]
 | Option | Default | Meaning |
 |---|---|---|
 | `--out DIR` | `./fleet-backups` | archive root |
-| `--product {luminosa,solira}` | both | restrict to one product (repeatable) |
-| `--serial SERIAL` | — | restrict to one instrument serial (repeatable); passes the `instrument_serial` filter to the backend |
+| `--product {luminosa,solira,powermeter}` | all three | restrict to one product (repeatable). `powermeter` pulls laser-power measurement records; omitting it from an explicit `--product` list skips them |
+| `--serial SERIAL` | — | restrict to one serial (repeatable). For `luminosa`/`solira` it filters `instrument_serial`; for `powermeter` it filters `system_serial` |
 | `--since ISO` | — | only artifacts with `received_at >= ISO` |
 | `--until ISO` | — | only artifacts with `received_at <= ISO` |
 | `--api URL` | `$API_BASE_URL` or `https://api.picoquant.com` | backend base URL |
@@ -45,9 +45,17 @@ with a message naming the env var and file checked (not the value).
    SHA-256, write `_versions/<rel>/<received_at>__<sha8>.bak` atomically, update the mirrored
    latest if this is the newest version of its `file_key`, append a `ManifestEntry`.
 5. Write each touched `manifest.json` atomically.
-6. Print the run summary; release the lock; exit per the table below.
+6. **If `powermeter` is in scope**: page
+   `GET /api/v2/admin/products/powermeter/telemetry` (with any `system_serial` / `since` /
+   `until` filters). Group rows by `system_serial`. For each system resolve its `_powermeter`
+   folder — an existing one from a prior run, else nested under `<product>/<serial>/` if that
+   instrument folder exists, else standalone `powermeter/<serial>/`. For each row whose `id`
+   is **not** in that folder's `_powermeter/manifest.json`: write the whole row as
+   `records/<measured_at>__<id8>.json` atomically, refresh `<measurement_type>.latest.json`,
+   append a `PowerRecordEntry`, write the manifest.
+7. Print the run summary; release the lock; exit per the table below.
 
-Re-running with no new artifacts downloads nothing and writes nothing (SC-002/SC-003).
+Re-running with no new artifacts downloads nothing and writes nothing (SC-002/SC-003/SC-011).
 
 ## Output (stdout)
 
@@ -57,6 +65,7 @@ Human-readable summary, always printed (even with `--quiet`). Shape:
 fleet-backup-pull  <started_utc> .. <finished_utc>
   luminosa : ok        machines=214  added=3   failed=0
   solira   : SKIPPED    (403 — admin key has no access)
+  powermeter: ok        systems=12  records=4  failed=0
 totals: machines=214  artifacts added=3  failed=0
 ```
 
@@ -65,6 +74,7 @@ Per-artifact lines (stderr, suppressed by `--quiet`):
 ```
 + luminosa/SN-12345/0f4a…/ProgramData/PicoQuant/Luminosa/PQDevice.db  (2026-09-08T12:52:52Z, 40960 B)
 ! luminosa/SN-67890/1a2b…/…/GUISettings.xml  digest_mismatch (expected 24ab…, got 9f1c…) — not archived
++ powermeter/1051032/combiner_power  (2026-09-10T11:43:56.455172Z, 76d36f96-3c4c-498d-ac51-cd87a317d3a7)
 ```
 
 ## Exit codes
@@ -72,8 +82,8 @@ Per-artifact lines (stderr, suppressed by `--quiet`):
 | Code | Meaning | Scheduler action |
 |---|---|---|
 | `0` | success — artifacts added or nothing new; **or** another run was already in progress | none |
-| `1` | partial — the run finished but ≥1 artifact failed download or verification | look at the named instrument(s) |
-| `2` | fatal — admin key missing/invalid, no product reachable, or archive root not writable | the job is broken; fix and re-run |
+| `1` | partial — the run finished but ≥1 artifact failed download/verification, a sweep failed, or a folder was blocked | look at the named instrument(s) |
+| `2` | fatal — admin key missing/invalid, **no** product (incl. powermeter) reachable, or archive root not writable | the job is broken; fix and re-run |
 
 A `pruned` miss (a `404` on content because the backend dropped it between listing and fetch)
 is logged but does **not** by itself cause exit `1` — it is retried next run.

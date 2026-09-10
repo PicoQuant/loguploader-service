@@ -10,6 +10,8 @@
 Narrowed on 2026-09-08: **only the scheduled archive pull is in scope now.** Restore,
 version inspection, and unattended-operation niceties are deferred to a later increment of
 this feature (kept in *Deferred — later increments* below).
+Extended on 2026-09-10: the same pull also archives the **`powermeter` product's laser-power
+measurement records** (US2), which the backend likewise keeps only transiently.
 
 ## Overview
 
@@ -19,11 +21,19 @@ number of versions per instrument/file and/or a limited time window. Nothing tod
 transient store into a durable one, so a device's configuration history is lost on the
 backend's normal pruning schedule.
 
+The same backend also stores **laser-power measurement records** for a given system under a
+separate `powermeter` product (`GET /api/v2/admin/products/powermeter/telemetry`), submitted
+out-of-band by a technician (not by the fleet agent) and keyed by the PicoQuant instrument's
+`system_serial`. These records sit in the telemetry store, which **is** on the backend's daily
+`archive_and_prune` schedule — so they are transient in exactly the way the config backups are
+not, and an off-device archive is the only durable home for them.
+
 This increment delivers the **archive pull**: an off-device job, run from an external
-scheduler, that pulls every config backup the backend currently exposes for the fleet into a
-permanent local archive — downloading only artifacts the archive does not already hold, and
-never deleting history it has already captured. The archive becomes the system of record for
-configuration history; the backend is treated as a transient source.
+scheduler, that pulls every config backup **and every power-measurement record** the backend
+currently exposes for the fleet into a permanent local archive — downloading only artifacts
+the archive does not already hold, and never deleting history it has already captured. The
+archive becomes the system of record for configuration history **and power-measurement
+history**; the backend is treated as a transient source.
 
 The tool is operated by PicoQuant maintainers/support, off the instrument, using the existing
 admin credential for `api.picoquant.com` (never placed on an instrument). The agent, the
@@ -41,6 +51,23 @@ this feature's scope overall, but is **not** part of this increment.
 - Q: What should a run do when a previous run is still in progress (overlapping schedule)? → A: Detect the lock, log "already running", exit 0 without doing anything (the next scheduled run catches up).
 - Q: One archive folder per serial, or per (serial + machine identifier)? → A: Per (serial, machine id) — `<product>/<serial>/<machine-id>/…`, always. One folder maps to exactly one physical machine.
 - (Resolved by investigation, not a question) The admin endpoint `GET /api/v2/admin/products/{product}/backups` already returns full per-file **version history** (all versions, newest first), verified live. FR-010 / SC-009 need no `specs/003-backend-api-support` change.
+
+### Session 2026-09-10 (US2 — power-measurement archival)
+
+- Q: What exactly counts as "laser power measurements"? → A: every telemetry record under the
+  `powermeter` product (today only `measurement_type: combiner_power` exists), keyed by
+  `system_serial`. Instrument-product heartbeats (`agent_status`, `upgrade_attempt`) stay out.
+- Q: How are the records organised, given they carry a `system_serial` but no `machine_id`? →
+  A: nested under the matching `<product>/<serial>/_powermeter/` when a luminosa/solira
+  instrument folder for that serial already exists in the archive; otherwise a standalone
+  `powermeter/<serial>/` tree. The choice is made once and pinned by the folder's manifest.
+- (Resolved by investigation) The `powermeter` telemetry **list row carries the full
+  `payload`** — there is no per-record content endpoint, so the list response *is* the
+  artifact. The row has no backend `content_sha256`; the archive records its own SHA-256 of
+  the stored JSON for the manifest / rebuild, and there is nothing external to verify against.
+- (Resolved by investigation) `powermeter` telemetry is on the backend's
+  `telemetry.archive_and_prune` daily loop (unlike `config_backups`, which
+  `CONFIG_BACKUP_RETENTION_DAYS=0` keeps forever) — confirming these records are transient.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -91,6 +118,42 @@ copy is still present and unchanged.
 
 ---
 
+### User Story 2 - Laser-power measurement records accumulate in the archive (Priority: P1)
+
+The same scheduled run pulls every `powermeter` measurement record the backend currently
+exposes for the fleet, keyed by `system_serial`, into the archive — one JSON file per record,
+never re-downloading one it already holds, never deleting one the backend has since pruned.
+
+**Why this priority**: the power-measurement records live in the telemetry store, which the
+backend prunes on a daily schedule. Without a durable archive they are simply gone after the
+retention window — and unlike the config backups, nothing else keeps them. A maintainer
+investigating an instrument's optical throughput months later needs the full history.
+
+**Independent Test**: run the pull, confirm every record the backend lists for a system is
+written under that system's folder as `records/<measured_at>__<id8>.json` byte-identical to
+the backend row. Run it again → nothing downloaded, no file changed. Remove a record from the
+backend that the archive holds → the archived copy stays and the run still succeeds.
+
+**Acceptance Scenarios**:
+
+1. **Given** a `powermeter` record the archive does not hold, **When** the pull runs, **Then**
+   the full record (including its `payload`) is written under the owning system's folder and
+   listed in that folder's manifest by its backend `id`.
+2. **Given** every listed record is already archived, **When** the pull runs, **Then** it
+   downloads nothing and modifies no archived file.
+3. **Given** a system that already has a `luminosa` or `solira` instrument folder in the
+   archive, **When** its first power record is archived, **Then** it is filed under
+   `<product>/<serial>/_powermeter/`; **given** no such folder exists, **Then** it is filed
+   under a standalone `powermeter/<serial>/`. Once chosen, the location does not move.
+4. **Given** a record whose `system_serial` is absent, **When** the pull runs, **Then** it is
+   archived under `powermeter/unknown/` and the run succeeds.
+5. **Given** the `powermeter` product is not accessible with the admin key, **When** the pull
+   runs, **Then** it is reported as skipped and the config-backup products still archive.
+6. **Given** a record the archive captured that the backend has since pruned, **When** the
+   pull runs, **Then** the archived copy is retained unchanged.
+
+---
+
 ### Edge Cases
 
 - **Backend prunes between listing and download** — an artifact listed at the start of a run
@@ -119,6 +182,15 @@ copy is still present and unchanged.
   wholesale.
 - **Clock skew on the maintainer machine** — ordering and "since last run" use the backend's
   recorded receipt time, not the local clock.
+- **A power record's `system_serial` matches two archived instrument folders** (same serial on
+  a luminosa *and* a solira folder — not expected) — the pull nests under the first product it
+  finds and pins that in the manifest; it never splits one system's records across folders.
+- **An instrument folder for the system appears only after some power records were already
+  filed standalone** — the records stay where they were first filed (`powermeter/<serial>/`);
+  the location is read from the existing manifest, not recomputed.
+- **A power record carries no `payload` or an unexpected `measurement_type`** — it is archived
+  as-is (the archive does not interpret the payload); a new `measurement_type` simply gets its
+  own `<type>.latest.json` mirror.
 
 ## Requirements *(mandatory)*
 
@@ -187,12 +259,48 @@ copy is still present and unchanged.
   touching the archive**. It MUST NOT wait, queue, or error. The next scheduled run catches up
   (the pull is incremental).
 
+#### Power-measurement archival (US2)
+
+- **FR-018**: The same run MUST also pull the `powermeter` product's telemetry records via
+  `GET /api/v2/admin/products/powermeter/telemetry` (paged), covering **every**
+  `measurement_type` that endpoint returns. Instrument-product heartbeat telemetry
+  (`agent_status`, `upgrade_attempt`) remains out of scope.
+- **FR-019**: Each power record MUST be archived as a single file holding the **complete
+  backend row, including its `payload`** — the list row is the artifact; there is no separate
+  content fetch. Records are grouped by `system_serial`.
+- **FR-020**: A record is "already archived" iff its backend `id` is recorded in the owning
+  folder's manifest (fallback: its target file already exists). A re-run MUST download nothing
+  and modify no archived file (same guarantee as FR-005 / SC-003).
+- **FR-021**: The archive MUST be **append-only** for power records too: a record once written
+  is never overwritten or deleted, even after the backend prunes it from the telemetry store
+  (same guarantee as FR-007).
+- **FR-022**: Power records for a system MUST be filed under
+  `<product>/<serial>/_powermeter/` when an instrument folder for that serial already exists
+  in the archive, otherwise under a standalone `powermeter/<serial>/` (`powermeter/unknown/`
+  when the serial is absent). The location MUST be decided once and thereafter read from the
+  folder's manifest, never recomputed — records for one system never split across folders.
+- **FR-023**: Each `_powermeter` folder MUST hold a **manifest** of every record it holds
+  (backend `id`, `system_serial`, power-meter `instrument_serial`, `measurement_type`,
+  `received_at`, `measured_at`, the stored file's own SHA-256) and MUST mirror the newest
+  record of each `measurement_type` at a predictable path for quick inspection.
+- **FR-024**: The `--serial` restriction MUST apply to `system_serial` for `powermeter` (and
+  continues to apply to `instrument_serial` for `luminosa` / `solira`). `--since` / `--until`
+  and the accessibility / partial-run / exit-code rules (FR-004, FR-015, FR-016) apply
+  unchanged. A `powermeter` row carries no backend content hash, so FR-008's
+  digest-verification step does not apply to it — the archive stores exactly the bytes the
+  list returned.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Backup Artifact**: one version of one configuration file for one instrument — its content,
   content fingerprint, size, backend receipt time, original source path, reporting machine
   identifier, and file identity. Produced by the v2 agent, retained transiently by the
   backend, retained permanently by the archive.
+- **Power-Measurement Record**: one `powermeter` telemetry row for one system — its backend
+  `id`, `system_serial`, the power-meter device's `instrument_serial`, `measurement_type`,
+  `received_at`, `measured_at`, and the full `payload`. Submitted out-of-band by a technician,
+  retained transiently in the backend's telemetry store (daily `archive_and_prune`), retained
+  permanently by the archive as one JSON file.
 - **Local Archive**: the durable store on a maintainer machine, organised
   `<product>/<serial>/<machine-id>/…`. Holds every artifact ever captured plus a per-machine
   manifest. Append-only with respect to history; no local retention/prune in this increment.
@@ -230,6 +338,14 @@ copy is still present and unchanged.
 - **SC-009**: For every machine folder, the archive holds **every version** of each file it
   ever captured (not just the latest), each retrievable — the foundation the later restore
   increment builds on.
+- **SC-010**: Any `powermeter` record that appeared on the backend while at least one pull
+  ran successfully afterward is present in the archive **permanently** — 0 lost to the
+  telemetry-store prune.
+- **SC-011**: Re-running the pull re-downloads **0** power records the archive already holds
+  and changes 0 archived files.
+- **SC-012**: Every archived power record is byte-identical to the backend list row it came
+  from, and every one is attributable to a `system_serial` (or the explicit `unknown`
+  folder).
 
 ## Assumptions
 
@@ -257,6 +373,11 @@ copy is still present and unchanged.
   backend retention behaviour this feature compensates for. The existing `GET .../backups`
   endpoint (filters + paging) already returns full per-file version history — no spec-003
   change needed.
+- **The `powermeter` product** on `api.picoquant.com` and its
+  `GET /api/v2/admin/products/powermeter/telemetry` admin endpoint (filters
+  `system_serial` / `instrument_serial` / `measurement_type` / `since` / `until`, paging via
+  `limit` / `offset` / `total`, list rows carrying the full `payload`). Verified live
+  2026-09-10. No spec-003 change needed — the endpoint already exists.
 - An external scheduler on the maintainer machine (initially a cron job) to run the pull
   regularly — configured by the operator, **not shipped or specified by this feature**.
 - Durable local storage for the archive.
@@ -278,8 +399,13 @@ copy is still present and unchanged.
 - Any change to the v2 agent, the backend upload path, or the backend's own retention policy.
 - Protecting the archive storage itself (offsite replication, encryption at rest, RAID).
 - A GUI; per-maintainer identity/audit; multi-tenant access control.
-- Telemetry-record (`agent_status` heartbeat) archival — this feature is configuration
-  **backups** only.
+- Instrument-product heartbeat telemetry (`agent_status`, `upgrade_attempt`) archival — the
+  telemetry this feature archives is the `powermeter` product's **measurement records** (US2),
+  not fleet heartbeats.
+- Interpreting, validating, or transforming a power record's `payload` — it is archived
+  verbatim.
+- Correlating a `powermeter` record to a specific `machine_id` (the records carry only
+  `system_serial`); restoring or replaying power records anywhere.
 - Migrating historical v1 Nextcloud uploads into the archive.
 
 ## Deferred — later increments (same feature area, not now)

@@ -1,8 +1,9 @@
 # Phase 1 Data Model — Fleet Backup Archive
 
-Mostly in-memory value types plus two persisted JSON shapes (`manifest.json`, the lock file)
-and the archive's directory layout itself. No database. Wire shapes are the backend's, defined
-in `specs/003-backend-api-support`; the fields this tool relies on are pinned in
+Mostly in-memory value types plus the persisted JSON shapes (the config-backup
+`manifest.json`, the US2 `_powermeter/manifest.json`, the lock file) and the archive's
+directory layout itself. No database. Wire shapes are the backend's, defined in
+`specs/003-backend-api-support`; the fields this tool relies on are pinned in
 `contracts/backend-admin-api.md`.
 
 ## BackendBackupRow (wire — one row from `GET /admin/products/{product}/backups`)
@@ -27,21 +28,53 @@ Ordering: the backend returns rows **newest first**. The tool sorts ascending by
 per `(serial, machine_id, file_key)` so the last one processed is the newest → becomes the
 mirrored "latest".
 
+## BackendPowerRow (wire — one row from `GET /admin/products/powermeter/telemetry`) — US2
+
+The whole row is the artifact (there is no per-record content endpoint). The tool stores it
+verbatim and reads these fields for grouping / the manifest:
+
+| Field | Type | Use |
+|---|---|---|
+| `id` | string (UUID) | **archive identity** — "already archived" ⇔ `id` in the `_powermeter` manifest |
+| `product_key` | `"powermeter"` | (always powermeter here) |
+| `system_serial` | string \| null/absent | the PicoQuant instrument — grouping key + `<serial>` folder; absent → `unknown` |
+| `instrument_serial` | string | the **power-meter device** serial (e.g. Thorlabs `M01333314`) — manifest only |
+| `measurement_type` | string | e.g. `combiner_power`; groups the `<measurement_type>.latest.json` mirror |
+| `received_at` | RFC3339 string | ordering within a `measurement_type`; part of the record filename fallback |
+| `measured_at` | RFC3339 string | preferred timestamp in the record filename |
+| `payload` | object | the measurement itself — stored, never interpreted |
+| `submitted_by`, `auth_kind`, `meta`, … | any | stored verbatim as part of the row; not read |
+
+Response envelope: `{ "ok": true, "records": [...], "limit": int, "offset": int, "total": int }`.
+Paging: request `limit=1000` + `offset`; stop on an empty/short page or when `offset >= total`.
+`--serial` → the `system_serial` query filter; `--since` / `--until` pass through.
+
 ## Archive layout (on disk)
 
 ```
 <root>/
 ├── .fleet-backup.lock                      # present only while a run holds it
-└── <product>/
-    └── <serial>/                           # literal "unknown" if not known
-        └── <machine-id>/
-            ├── manifest.json
-            ├── <rel(source_path)>           # newest version, e.g.
-            │                                #   ProgramData/PicoQuant/Luminosa/LastKnownGood.xml
-            └── _versions/
-                └── <rel(source_path)>/
-                    ├── 2026-09-08T12-52-52Z__b72cde42.bak     # every version, incl. newest
-                    └── 2026-09-07T09-10-00Z__a1b2c3d4.bak
+├── <product>/
+│   └── <serial>/                           # literal "unknown" if not known
+│       ├── <machine-id>/
+│       │   ├── manifest.json
+│       │   ├── <rel(source_path)>          # newest version, e.g.
+│       │   │                               #   ProgramData/PicoQuant/Luminosa/LastKnownGood.xml
+│       │   └── _versions/
+│       │       └── <rel(source_path)>/
+│       │           ├── 2026-09-08T12-52-52Z__b72cde42.bak     # every version, incl. newest
+│       │           └── 2026-09-07T09-10-00Z__a1b2c3d4.bak
+│       └── _powermeter/                    # US2 — present when this instrument has power records
+│           ├── manifest.json               # kind: "powermeter"
+│           ├── combiner_power.latest.json  # newest record of each measurement_type
+│           └── records/
+│               └── 2026-09-10T11-43-39Z__76d36f96.json        # every measurement record (full row)
+└── powermeter/                             # US2 — standalone tree for systems with no instrument folder
+    └── <system_serial>/                    # literal "unknown" if absent
+        ├── manifest.json
+        ├── combiner_power.latest.json
+        └── records/
+            └── 2026-09-10T11-43-39Z__76d36f96.json
 ```
 
 ### `rel(source_path)` — path derivation (pure function, unit-tested)
@@ -96,6 +129,52 @@ re-download). `id` is unknown for rebuilt entries → store `id: null`; the run 
 `(rel_path, content_sha256)` as the fallback dedupe key for that folder until the next clean
 manifest write restores ids.
 
+### power record filename — US2
+
+`<measured_at (or received_at) with ':' → '-'>__<first 8 of the backend id>.json`
+e.g. `2026-09-10T11-43-39Z__76d36f96.json`. One file per record; the file holds the full
+backend row (`json.dumps(row, sort_keys=True, indent=2)`).
+
+## Power Manifest (`_powermeter/manifest.json`) — persisted — US2
+
+Written atomically. `kind: "powermeter"` distinguishes it from the config-backup manifest.
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema_version` | int | currently `1` |
+| `kind` | `"powermeter"` | guards against loading a config-backup manifest by mistake |
+| `system_serial` | string | the PicoQuant instrument (or `"unknown"`) |
+| `location` | `"luminosa"` \| `"solira"` \| `"powermeter"` | which tree this folder lives in — **pinned**, never recomputed |
+| `updated_utc` | RFC3339 string | last successful run that touched this folder |
+| `records` | array of `PowerRecordEntry` | every archived record, any order |
+
+**PowerRecordEntry**
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string (UUID) | backend id — the dedupe key |
+| `received_at` | RFC3339 string | ordering within a `measurement_type` |
+| `measured_at` | RFC3339 string | |
+| `measurement_type` | string | e.g. `combiner_power` |
+| `instrument_serial` | string \| null | the power-meter **device** serial |
+| `system_serial` | string | the PicoQuant instrument |
+| `record_file` | string | POSIX path of `records/*.json` relative to the `_powermeter` folder |
+| `content_sha256` | 64 hex | SHA-256 of the **stored JSON bytes** (own integrity ref — no backend hash exists) |
+| `is_latest` | bool | true for the newest `received_at` of its `measurement_type` (the `<type>.latest.json` mirror) |
+| `archived_utc` | RFC3339 string | when this run wrote it |
+
+**Location resolution** (`resolve_power_dir`): (1) if a `_powermeter/manifest.json` already
+exists under `luminosa/<serial>/`, `solira/<serial>/`, or `powermeter/<serial>/` → use it;
+(2) else, first sighting → `<product>/<serial>/_powermeter/` if that instrument folder exists,
+otherwise `powermeter/<serial>/`. The result is stored as `location` and never revisited.
+
+**Rebuild rule** (missing / corrupt / wrong `kind` / higher `schema_version`): read every
+`records/*.json`, take `id` / `received_at` / `measured_at` / `measurement_type` /
+`system_serial` / `instrument_serial` straight from the file (the backend `id` is *inside*
+the record, unlike the `.bak` case), recompute `content_sha256` from the bytes, set
+`is_latest` on the newest `received_at` per `measurement_type`; unreadable files are omitted
+(they re-download).
+
 ## RunReport (in-memory, printed at the end)
 
 | Field | Type |
@@ -108,7 +187,9 @@ manifest write restores ids.
 | `exit_code` | `0` \| `1` \| `2` (see `contracts/cli.md`) |
 
 **ProductResult**: `product`, `accessible: bool`, `reason: str?` (why not), `machines_seen`,
-`artifacts_added`, `artifacts_failed`.
+`artifacts_added`, `artifacts_failed`, `pruned`, `skipped_machines`. The `powermeter` sweep
+reuses this type — `machines_seen` counts **systems**, `artifacts_added` counts **records**
+(the summary line prints `systems=` / `records=` for it).
 
 ### Exit-code derivation
 

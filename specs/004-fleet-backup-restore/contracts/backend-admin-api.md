@@ -1,10 +1,11 @@
 # Contract — admin API consumed by the archive tool (client side)
 
 Backend side is `specs/003-backend-api-support`; this pins the subset `fleet_backup_pull.py`
-depends on. Verified live against `api.picoquant.com` on 2026-09-08 (v2.2.0-beta.2 data).
+depends on. §1/§2 verified live against `api.picoquant.com` on 2026-09-08 (v2.2.0-beta.2
+data); §3 (powermeter telemetry, US2) verified live on 2026-09-10.
 
 Base URL: `https://api.picoquant.com` (override: `--api` / `$API_BASE_URL`).
-`{product}` ∈ `luminosa` | `solira`.
+`{product}` ∈ `luminosa` | `solira` for §1/§2; `powermeter` for §3.
 Auth header on **every** call: `X-ADMIN-API-KEY: <maintainer admin key>`. Nothing else.
 
 ## 1. List backups — `GET /api/v2/admin/products/{product}/backups`
@@ -79,8 +80,64 @@ The tool streams to `<final>.part`, hashing as it writes, then compares to the r
 | `5xx` / timeout / connection error | up to 3 attempts, backoff 2 s → 4 s; still failing → `download_error` for that artifact (exit `1`) |
 | digest mismatch on a `200` body | `digest_mismatch`; temp file deleted; not archived; recorded (exit `1`) |
 
+## 3. List power-meter telemetry — `GET /api/v2/admin/products/powermeter/telemetry` (US2)
+
+Verified live 2026-09-10. Auth header `X-ADMIN-API-KEY`, same as §1/§2.
+
+Query parameters (all optional):
+
+| Param | Meaning |
+|---|---|
+| `system_serial` | exact PicoQuant-instrument-serial filter (this is what `--serial` passes for powermeter) |
+| `instrument_serial` | exact power-meter-device-serial filter (not used by this tool) |
+| `measurement_type` | exact type filter (not used — the archive wants every type) |
+| `since` / `until` | RFC3339 bounds on `received_at` |
+| `limit` | page size; the tool requests `1000` |
+| `offset` | page offset |
+
+**Success** `200`:
+
+```json
+{
+  "ok": true,
+  "records": [
+    {
+      "id": "76d36f96-3c4c-498d-ac51-cd87a317d3a7",
+      "received_at": "2026-09-10T11:43:56.455172Z",
+      "product_key": "powermeter",
+      "instrument_serial": "M01333314",
+      "system_serial": "1051032",
+      "submitted_by": "tech@picoquant.com",
+      "auth_kind": "session",
+      "measurement_type": "combiner_power",
+      "measured_at": "2026-09-10T11:43:39Z",
+      "payload": { "schema": "pm100.combiner_record.v2", "records": [ ... ] }
+    }
+  ],
+  "limit": 1000,
+  "offset": 0,
+  "total": 5
+}
+```
+
+- **The list row is the artifact.** `payload` is the full measurement; there is **no**
+  `…/telemetry/{id}` content endpoint (verified `404`). The tool stores
+  `json.dumps(row, sort_keys=True, indent=2)` as one `records/<measured_at>__<id8>.json`.
+- **No `content_sha256`** on the row — the tool records its own SHA-256 of the stored bytes;
+  there is nothing external to verify against, so §2's digest-mismatch path does not apply.
+- **Paging**: request `limit=1000` + `offset`; stop on an empty/short page or when
+  `offset >= total`.
+- `system_serial` may be absent → the record is archived under `powermeter/unknown/`.
+
+**Errors → tool behaviour**
+
+| Status | Tool behaviour |
+|---|---|
+| `401` / `403` / `404` | `powermeter` marked **inaccessible**; logged; the config-backup products still archive. Contributes to exit `2` only if it leaves **no** product reachable. |
+| `5xx` / timeout / connection error | up to 3 attempts, backoff 2 s → 4 s; still failing → the `powermeter` sweep is marked failed (exit `1`) |
+
 ## Not called
 
 `…/backups/latest` (the archive wants every version, not just the newest), any write endpoint,
-token minting, the TOTP flow, and the `agent_status` telemetry endpoints. This tool is
-read-only against the backend.
+token minting, the TOTP flow, and the `agent_status` / `upgrade_attempt` **heartbeat**
+telemetry (for `luminosa` / `solira`). This tool is read-only against the backend.

@@ -20,11 +20,23 @@ Windows path and every version kept under `_versions/`. The per-machine `manifes
 both the record of what is held and the **incremental cursor** — an artifact is "already
 archived" iff its backend id is in the manifest, so a no-op run does no file hashing.
 
+**US2 (added 2026-09-10)**: the same run also sweeps
+`GET /api/v2/admin/products/powermeter/telemetry` and archives each laser-power measurement
+record as one JSON file (the list row carries the full `payload` — there is no content
+sub-fetch, and no backend content hash to verify against). Records group by `system_serial`
+and land under `<product>/<serial>/_powermeter/` when that instrument folder already exists,
+else a standalone `powermeter/<serial>/` (`powermeter/unknown/` when the serial is absent).
+The choice is pinned in a per-folder `_powermeter/manifest.json` (its own `kind: "powermeter"`
+schema) that works exactly like the config-backup manifest — id-keyed cursor, rebuildable
+from the `records/*.json` files, append-only — plus a `<measurement_type>.latest.json` mirror.
+
 Technical approach: a single self-contained **Python 3** script (`tools/fleet_backup_pull.py`,
 evolving the existing seed), standard library only (`urllib`, `hashlib`, `json`, `argparse`,
 `pathlib`), no third-party dependency. Concurrency-safe via a lock file (second run logs and
 exits 0). Restore, inspection, and stale-instrument detection are out of this increment
-(spec → *Deferred*).
+(spec → *Deferred*). Power-record archival (US2) is folded into the same script and the same
+run — a second discovery sweep + a parallel `PowerManifest` / `pull_power_system` path that
+reuses the lock, the `ProductResult` / exit-code machinery, and `write_atomic`.
 
 ## Technical Context
 
@@ -88,9 +100,9 @@ Constitution v1.3.0. Result: **PASS.**
 ### Post-Design Constitution Re-check (after Phase 1)
 
 No violations. Confirmations:
-- **III** — `data-model.md` defines the archive as write-once per artifact; the only writer,
-  `commit_artifact`, refuses to touch an existing path and only ever `os.replace`s a verified
-  temp file. `manifest.json` is written the same way.
+- **III** — `data-model.md` defines the archive as write-once per artifact; the only writers,
+  `commit_artifact` and `commit_power_record`, refuse to touch an existing path and only ever
+  `os.replace` a verified temp file. `manifest.json` (both schemas) is written the same way.
 - **II** — the admin key flows from `Config` (env/.env) into an `Authorization`-style header
   and nowhere else; `RunReport` and manifests have no field for it; a redaction test asserts
   it never appears in captured output.
@@ -124,6 +136,9 @@ tools/
 │                               #   + lock file (overlap -> log + exit 0)
 │                               #   + bounded retry/backoff, per-product accessibility
 │                               #   + RunReport + 0/1/2 exit codes
+│                               #   + powermeter telemetry sweep (US2): Api.list_telemetry,
+│                               #     PowerManifest / PowerRecordEntry, resolve_power_dir,
+│                               #     commit_power_record, discover_power, pull_power_system
 │                               #   pure helpers kept at module scope for unit testing
 └── test_fleet_backup_pull.py   # unittest, HTTP layer faked, no network
 ```
@@ -151,3 +166,23 @@ already-archived check, the run summary, retry decisions) is a module-level pure
   for every version (including the newest, so history is complete in one place).
 - **Restore / inspection / stale-instrument detection**: explicitly out of this plan (spec
   *Deferred*). `manifest.json` is designed now to carry everything those increments will need.
+
+### US2 — power-measurement archival (added 2026-09-10)
+
+- **Discovery**: one paged sweep of `GET /admin/products/powermeter/telemetry`
+  (`limit`/`offset`, stop on a short page or `offset >= total`); `--serial` → `system_serial`
+  filter; `--since`/`--until` pass through. Group rows by `system_serial`.
+- **The list row is the artifact** — it already contains the full `payload`; there is no
+  `…/telemetry/{id}` content endpoint (verified 404). No backend `content_sha256`, so no
+  external verify; the archive records its own SHA-256 of the stored JSON for the manifest and
+  the rebuild path.
+- **Location**: reuse an existing `_powermeter` manifest (checked at
+  `luminosa/<serial>/_powermeter/`, `solira/<serial>/_powermeter/`, `powermeter/<serial>/`);
+  for a system not yet archived, nest under `<product>/<serial>/_powermeter/` if that
+  instrument folder exists, else `powermeter/<serial>/`. Decision pinned in the manifest's
+  `location` field — never recomputed, records for one system never split.
+- **Manifest**: `_powermeter/manifest.json`, `kind: "powermeter"`, `schema_version` 1, records
+  keyed by backend `id`; rebuilt by reading each `records/*.json` (the `id` is in the file);
+  `<measurement_type>.latest.json` mirrors the newest record of each type.
+- **`powermeter` as a `--product` value**: added to the CLI choices; the default run does all
+  of luminosa + solira + powermeter. `--product luminosa` alone skips powermeter.

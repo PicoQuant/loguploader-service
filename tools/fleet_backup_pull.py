@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull v2 config-backup artifacts from api.picoquant.com into a permanent local archive.
+"""Pull v2 config backups + laser-power measurements from api.picoquant.com into a local archive.
 
 Maintainer / disaster-recovery tool (spec 004). Runs off the instrument, from an external
 scheduler (a cron job — the schedule is the operator's job, not this tool's). Each run sweeps
@@ -7,13 +7,23 @@ the admin backup list for every product it can see and downloads every artifact 
 archive does not already hold, verifies it, files it, and **never deletes or overwrites**
 history it already captured — so the archive stays complete even after the backend prunes.
 
-Archive layout (one folder per physical machine)::
+The same run also pulls the ``powermeter`` product's telemetry records (laser / combiner
+power measurements), which the backend keeps only transiently — one JSON file per record,
+keyed by the PicoQuant instrument's ``system_serial``.
+
+Archive layout::
 
     <out>/<product>/<serial>/<machine-id>/
         manifest.json                                   # what this folder holds + the cursor
         ProgramData/PicoQuant/Luminosa/LastKnownGood.xml # newest version, mirrored from source_path
         _versions/ProgramData/PicoQuant/Luminosa/LastKnownGood.xml/
             2026-09-08T12-52-52Z__b72cde42.bak          # every version (incl. newest)
+
+    <out>/<product>/<serial>/_powermeter/               # nested when that instrument folder exists,
+    <out>/powermeter/<serial>/                          # else standalone
+        manifest.json
+        combiner_power.latest.json                      # newest record of each measurement_type
+        records/2026-09-10T11-43-39Z__76d36f96.json     # every measurement record
 
 Auth: the admin key from `EXPECTED_ADMIN_API_KEY` (env or `--env` file). It is never written
 to the archive, the manifests, the lock file, or any line this tool prints.
@@ -44,11 +54,14 @@ from pathlib import Path, PurePosixPath
 
 DEFAULT_API = "https://api.picoquant.com"
 PAGE = 1000                 # admin list max page size
-SCHEMA_VERSION = 1          # manifest.json schema
+SCHEMA_VERSION = 1          # manifest.json schema (config-backup machine folder)
+POWER_SCHEMA_VERSION = 1    # manifest.json schema (_powermeter folder)
 STALE_LOCK_SECS = 6 * 3600  # a lock older than this is reclaimed
 MAX_ATTEMPTS = 3
 BACKOFF_SECS = (2, 4)
-PRODUCTS = ("luminosa", "solira")
+PRODUCTS = ("luminosa", "solira")          # products with a watched config-backup file set
+POWERMETER = "powermeter"                  # telemetry-only product: laser/combiner power measurements
+SELECTABLE_PRODUCTS = PRODUCTS + (POWERMETER,)
 
 
 def now_iso() -> str:
@@ -84,7 +97,8 @@ class Config:
     api_base_url: str
     timeout: float
     out: Path
-    products: list[str]
+    products: list[str]      # config-backup products in scope (luminosa / solira)
+    powermeter: bool         # also pull the powermeter product's measurement records
     serials: list[str]
     since: str | None
     until: str | None
@@ -108,12 +122,14 @@ def load_config(args: argparse.Namespace) -> Config:
             f"EXPECTED_ADMIN_API_KEY is not set in the environment or {args.env} "
             f"(the value is never printed)."
         )
+    selected = list(args.product) if args.product else list(SELECTABLE_PRODUCTS)
     return Config(
         admin_key=key,
         api_base_url=base,
         timeout=float(args.timeout),
         out=Path(args.out),
-        products=list(args.product) if args.product else list(PRODUCTS),
+        products=[p for p in selected if p in PRODUCTS],
+        powermeter=POWERMETER in selected,
         serials=list(args.serial) if args.serial else [],
         since=args.since,
         until=args.until,
@@ -201,6 +217,34 @@ class Api:
         return self._get(
             f"/api/v2/admin/products/{product}/backups/{backup_id}/content", content=True
         )
+
+    def list_telemetry(self, product: str, *, system_serial: str | None = None,
+                       since: str | None = None, until: str | None = None):
+        """Yield every telemetry record for a product. The list row carries the full
+        ``payload`` — there is no per-record content endpoint, the row *is* the artifact."""
+        offset = 0
+        while True:
+            payload = json.loads(
+                self._get(
+                    f"/api/v2/admin/products/{product}/telemetry",
+                    {
+                        "system_serial": system_serial,
+                        "since": since,
+                        "until": until,
+                        "limit": PAGE,
+                        "offset": offset,
+                    },
+                )
+            )
+            rows = payload.get("records", []) if isinstance(payload, dict) else list(payload)
+            for row in rows:
+                yield row
+            total = payload.get("total") if isinstance(payload, dict) else None
+            offset += len(rows)
+            if not rows or len(rows) < PAGE:
+                return
+            if total is not None and offset >= total:
+                return
 
 
 # --------------------------------------------------------------------------- layout
@@ -692,6 +736,281 @@ def _first_nondir_component(target: Path, root: Path) -> Path | None:
     return None
 
 
+# --------------------------------------------------------------------------- powermeter
+
+
+def power_record_filename(ts: str, rec_id: str) -> str:
+    """`<measured_at/received_at, ':'→'-'>__<first 8 of the record id>.json`."""
+    t = (ts or "unknown").split(".")[0].replace(":", "-").rstrip("Z") + "Z"
+    rid8 = re.sub(r"[^0-9a-fA-F]", "", rec_id or "")[:8] or "00000000"
+    return f"{t}__{rid8}.json"
+
+
+@dataclass
+class PowerRecordEntry:
+    id: str | None
+    received_at: str
+    measured_at: str
+    measurement_type: str
+    instrument_serial: str | None    # the power-meter device serial (not the PQ instrument)
+    system_serial: str               # the PicoQuant instrument this measurement belongs to
+    record_file: str                 # POSIX path relative to the _powermeter folder
+    content_sha256: str              # sha256 of the stored JSON bytes (own integrity ref)
+    is_latest: bool
+    archived_utc: str
+
+    @staticmethod
+    def from_dict(d: dict) -> "PowerRecordEntry":
+        return PowerRecordEntry(
+            id=d.get("id"),
+            received_at=d.get("received_at", ""),
+            measured_at=d.get("measured_at", ""),
+            measurement_type=d.get("measurement_type", ""),
+            instrument_serial=d.get("instrument_serial"),
+            system_serial=d.get("system_serial", ""),
+            record_file=d.get("record_file", ""),
+            content_sha256=d.get("content_sha256", ""),
+            is_latest=bool(d.get("is_latest", False)),
+            archived_utc=d.get("archived_utc", ""),
+        )
+
+
+@dataclass
+class PowerManifest:
+    system_serial: str
+    location: str                    # "luminosa" | "solira" | "powermeter" — which tree it lives in
+    records: list[PowerRecordEntry] = field(default_factory=list)
+    schema_version: int = POWER_SCHEMA_VERSION
+    updated_utc: str = ""
+
+    def ids(self) -> set[str]:
+        return {e.id for e in self.records if e.id}
+
+
+def _power_manifest_path(power_dir: Path) -> Path:
+    return power_dir / "manifest.json"
+
+
+def resolve_power_dir(out_root: Path, system_serial: str) -> tuple[Path, str]:
+    """Where this system's power records live — decided once, then pinned by the manifest.
+
+    An existing ``_powermeter`` manifest (under a luminosa/solira instrument folder, or the
+    standalone ``powermeter/`` tree) wins. A system seen for the first time is nested under a
+    matching ``<product>/<serial>/`` instrument folder if one already exists, else filed
+    standalone under ``powermeter/<serial>/``.
+    """
+    seg = safe_segment(system_serial or "unknown")
+    candidates = [
+        (out_root / "luminosa" / seg / "_powermeter", "luminosa"),
+        (out_root / "solira" / seg / "_powermeter", "solira"),
+        (out_root / POWERMETER / seg, POWERMETER),
+    ]
+    for d, loc in candidates:
+        if _power_manifest_path(d).is_file():
+            return d, loc
+    if system_serial:
+        for product in PRODUCTS:
+            if (out_root / product / seg).is_dir():
+                return out_root / product / seg / "_powermeter", product
+    return out_root / POWERMETER / seg, POWERMETER
+
+
+def rebuild_power_manifest_from_disk(power_dir: Path, system_serial: str, location: str) -> PowerManifest:
+    """Reconstruct the manifest from the `records/*.json` files themselves (each carries its id)."""
+    m = PowerManifest(system_serial=system_serial, location=location)
+    rec_root = power_dir / "records"
+    if not rec_root.is_dir():
+        return m
+    newest: dict[str, str] = {}
+    for jf in sorted(rec_root.glob("*.json")):
+        try:
+            raw = jf.read_bytes()
+            rec = json.loads(raw)
+        except (OSError, ValueError):
+            log(f"{jf}: unreadable; omitted from rebuild")
+            continue
+        mt = rec.get("measurement_type", "")
+        ra = rec.get("received_at", "")
+        newest[mt] = max(newest.get(mt, ""), ra)
+        m.records.append(
+            PowerRecordEntry(
+                id=rec.get("id"),
+                received_at=ra,
+                measured_at=rec.get("measured_at", ""),
+                measurement_type=mt,
+                instrument_serial=rec.get("instrument_serial"),
+                system_serial=rec.get("system_serial", system_serial),
+                record_file=str(PurePosixPath("records", jf.name)),
+                content_sha256=hashlib.sha256(raw).hexdigest(),
+                is_latest=False,
+                archived_utc="",
+            )
+        )
+    for e in m.records:
+        e.is_latest = newest.get(e.measurement_type) == e.received_at
+    return m
+
+
+def load_power_manifest(power_dir: Path, system_serial: str, location: str) -> PowerManifest:
+    p = _power_manifest_path(power_dir)
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if int(d.get("schema_version", 0)) == POWER_SCHEMA_VERSION and d.get("kind") == "powermeter":
+            return PowerManifest(
+                system_serial=d.get("system_serial", system_serial),
+                location=d.get("location", location),
+                records=[PowerRecordEntry.from_dict(e) for e in d.get("records", [])],
+                schema_version=POWER_SCHEMA_VERSION,
+                updated_utc=d.get("updated_utc", ""),
+            )
+        log(f"{p}: unrecognised powermeter manifest (schema {d.get('schema_version')}); rebuilding from disk")
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as e:
+        log(f"{p}: unreadable ({e}); rebuilding from disk")
+    return rebuild_power_manifest_from_disk(power_dir, system_serial, location)
+
+
+def save_power_manifest(power_dir: Path, m: PowerManifest) -> None:
+    m.updated_utc = now_iso()
+    body = json.dumps(
+        {
+            "schema_version": POWER_SCHEMA_VERSION,
+            "kind": "powermeter",
+            "system_serial": m.system_serial,
+            "location": m.location,
+            "updated_utc": m.updated_utc,
+            "records": [dataclasses.asdict(e) for e in m.records],
+        },
+        indent=2,
+    )
+    write_atomic(_power_manifest_path(power_dir), body.encode("utf-8"))
+
+
+def commit_power_record(power_dir: Path, rec: dict) -> PowerRecordEntry | Failure:
+    """File one measurement record under `records/`. Append-only: an existing file is kept."""
+    body = json.dumps(rec, indent=2, sort_keys=True).encode("utf-8")
+    digest = hashlib.sha256(body).hexdigest()
+    ts = rec.get("measured_at") or rec.get("received_at") or ""
+    rel = PurePosixPath("records", power_record_filename(ts, rec.get("id") or digest))
+    path = power_dir.joinpath(*rel.parts)
+    try:
+        if not path.exists():  # append-only: never rewrite an archived record
+            write_atomic(path, body)
+    except OSError as e:
+        return Failure(FAILURE_WRITE, str(e))
+    return PowerRecordEntry(
+        id=rec.get("id"),
+        received_at=rec.get("received_at", ""),
+        measured_at=rec.get("measured_at", ""),
+        measurement_type=rec.get("measurement_type", ""),
+        instrument_serial=rec.get("instrument_serial"),
+        system_serial=rec.get("system_serial", ""),
+        record_file=str(rel),
+        content_sha256=digest,
+        is_latest=False,
+        archived_utc=now_iso(),
+    )
+
+
+def discover_power(api, serials: list[str], since: str | None, until: str | None):
+    """Sweep the powermeter telemetry list and group rows by `system_serial`."""
+    pr = ProductResult(product=POWERMETER)
+    groups: dict[str, list[dict]] = {}
+    try:
+        rows: list[dict] = []
+        for s in (serials or [None]):
+            rows.extend(api.list_telemetry(POWERMETER, system_serial=s, since=since, until=until))
+    except ApiAuthError as e:
+        pr.accessible = False
+        pr.reason = f"{e.code} — admin key has no access"
+        return groups, pr
+    except ApiError as e:
+        pr.accessible = False
+        pr.sweep_failed = True
+        pr.reason = f"list failed: {e}"
+        return groups, pr
+    for r in rows:
+        groups.setdefault(r.get("system_serial") or "unknown", []).append(r)
+    for k in groups:
+        groups[k].sort(key=lambda r: (r.get("measurement_type", ""), r.get("received_at", "")))
+    return groups, pr
+
+
+def pull_power_system(system_serial: str, records: list[dict], out_root: Path,
+                      pr: ProductResult, *, rebuild: bool, quiet: bool) -> None:
+    power_dir, location = resolve_power_dir(out_root, system_serial)
+
+    blocker = _first_nondir_component(power_dir, out_root)
+    if blocker is not None:
+        pr.skipped_machines += 1
+        _detail(quiet, f"# powermeter/{system_serial}  skipped: {blocker} is a file, not a directory")
+        return
+
+    if rebuild:
+        m = rebuild_power_manifest_from_disk(power_dir, system_serial, location)
+    else:
+        m = load_power_manifest(power_dir, system_serial, location)
+    known_ids = m.ids()
+    known_files = {e.record_file for e in m.records}
+    added: list[PowerRecordEntry] = []
+
+    for rec in records:
+        rid = rec.get("id")
+        if rid and rid in known_ids:
+            continue
+        entry = commit_power_record(power_dir, rec)
+        if isinstance(entry, Failure):
+            pr.artifacts_failed += 1
+            _detail(quiet, f"! powermeter/{system_serial}/{rec.get('measurement_type', '?')}  "
+                           f"{entry.category} ({entry.detail}) — not archived")
+            continue
+        if entry.record_file in known_files:
+            continue
+        if rid:
+            known_ids.add(rid)
+        known_files.add(entry.record_file)
+        added.append(entry)
+        pr.artifacts_added += 1
+        _detail(quiet, f"+ powermeter/{system_serial}/{entry.measurement_type}  "
+                       f"({entry.received_at}, {entry.id})")
+
+    by_id = {e.id: e for e in m.records if e.id}
+    for e in added:
+        if e.id and e.id in by_id:
+            continue
+        m.records.append(e)
+        if e.id:
+            by_id[e.id] = e
+
+    newest: dict[str, str] = {}
+    for e in m.records:
+        newest[e.measurement_type] = max(newest.get(e.measurement_type, ""), e.received_at)
+    for e in m.records:
+        e.is_latest = newest.get(e.measurement_type) == e.received_at
+
+    # refresh the mirrored newest record per measurement_type
+    for e in m.records:
+        if not e.is_latest:
+            continue
+        src = power_dir.joinpath(*PurePosixPath(e.record_file).parts)
+        if not src.exists():
+            continue
+        mirror = power_dir / f"{safe_segment(e.measurement_type or 'record')}.latest.json"
+        try:
+            data = src.read_bytes()
+            if not mirror.exists() or mirror.read_bytes() != data:
+                write_atomic(mirror, data)
+        except OSError as ex:
+            log(f"could not refresh mirrored latest {mirror}: {ex}")
+
+    if added or not _power_manifest_path(power_dir).exists():
+        try:
+            save_power_manifest(power_dir, m)
+        except OSError as ex:
+            log(f"could not write {_power_manifest_path(power_dir)}: {ex}")
+
+
 # --------------------------------------------------------------------------- output
 
 
@@ -700,6 +1019,12 @@ def print_summary(report: RunReport) -> None:
     for p in report.products:
         if not p.accessible:
             print(f"  {p.product:<9}: SKIPPED   ({p.reason})")
+        elif p.product == POWERMETER:
+            print(
+                f"  {p.product:<9}: ok        systems={p.machines_seen}  "
+                f"records={p.artifacts_added}  failed={p.artifacts_failed}"
+                + (f"  skipped={p.skipped_machines}" if p.skipped_machines else "")
+            )
         else:
             print(
                 f"  {p.product:<9}: ok        machines={p.machines_seen}  "
@@ -723,9 +1048,12 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--out", default="fleet-backups", help="archive root (default: ./fleet-backups)")
-    ap.add_argument("--product", action="append", choices=list(PRODUCTS),
-                    help="restrict to one product (repeatable; default: all)")
-    ap.add_argument("--serial", action="append", help="restrict to one instrument serial (repeatable)")
+    ap.add_argument("--product", action="append", choices=list(SELECTABLE_PRODUCTS),
+                    help="restrict to one product (repeatable; default: all, incl. powermeter). "
+                         "'powermeter' pulls laser/combiner power measurement records.")
+    ap.add_argument("--serial", action="append",
+                    help="restrict to one serial (repeatable): instrument_serial for "
+                         "luminosa/solira backups, system_serial for powermeter records")
     ap.add_argument("--since", help="only artifacts with received_at >= this ISO time")
     ap.add_argument("--until", help="only artifacts with received_at <= this ISO time")
     ap.add_argument("--api", help=f"backend base URL (default: $API_BASE_URL or {DEFAULT_API})")
@@ -773,6 +1101,15 @@ def main(argv: list[str] | None = None) -> int:
                         api, product, serial, machine_id, rows, cfg.out,
                         results[product], rebuild=cfg.rebuild_manifests, quiet=cfg.quiet,
                     )
+                if cfg.powermeter:
+                    pgroups, ppr = discover_power(api, cfg.serials, cfg.since, cfg.until)
+                    report.products.append(ppr)
+                    for system_serial, recs in sorted(pgroups.items()):
+                        ppr.machines_seen += 1
+                        pull_power_system(
+                            system_serial, recs, cfg.out, ppr,
+                            rebuild=cfg.rebuild_manifests, quiet=cfg.quiet,
+                        )
             finally:
                 release_lock(lock)
 

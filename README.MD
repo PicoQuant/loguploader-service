@@ -246,32 +246,38 @@ End-to-end validation against the real backend is `specs/002-v2-config-backup-te
 
 ## Fleet backup archive (maintenance)
 
-`tools/fleet_backup_pull.py` turns the backend's *transient* config-backup store into a
-**permanent local archive**. It downloads every backup `api.picoquant.com` currently exposes
-that the archive does not already hold, verifies it, files it, and never deletes captured
-history — so the archive stays complete after the backend prunes. Spec:
-`specs/004-fleet-backup-restore/`. Standard library only; run it from cron (the schedule is
-your job, not the tool's).
+`tools/fleet_backup_pull.py` turns the backend's *transient* stores into a **permanent local
+archive** — the changed device-config files **and** the `powermeter` product's laser-power
+measurement records. It downloads everything `api.picoquant.com` currently exposes that the
+archive does not already hold, verifies it, files it, and never deletes captured history — so
+the archive stays complete after the backend prunes. Spec: `specs/004-fleet-backup-restore/`.
+Standard library only; run it from cron (the schedule is your job, not the tool's).
 
 ```
-python tools/fleet_backup_pull.py                              # whole fleet, all products, into ./fleet-backups
+python tools/fleet_backup_pull.py                              # whole fleet, all products (incl. powermeter), into ./fleet-backups
 python tools/fleet_backup_pull.py --out backups/2026-09-08     # into a dated root
-python tools/fleet_backup_pull.py --product luminosa --serial SN-12345   # narrow
+python tools/fleet_backup_pull.py --product luminosa --serial SN-12345   # narrow (config only)
+python tools/fleet_backup_pull.py --product powermeter --serial 1051032  # just one system's power records
 python tools/fleet_backup_pull.py --since 2026-09-01           # only recent artifacts
 ```
 
 Auth: `EXPECTED_ADMIN_API_KEY` from the environment or `--env` (`./.env`); it is never written
 to the archive, its manifests, or any output.
 
-Layout — one folder per physical machine:
+Layout — one folder per physical machine, plus power-measurement records per system:
 
 ```
 <out>/<product>/<serial>/<machine-id>/
     manifest.json                                     # what this folder holds + the cursor
     ProgramData/PicoQuant/Luminosa/LastKnownGood.xml  # newest version, mirrored from source_path
     _versions/…/LastKnownGood.xml/2026-09-08T12-52-52Z__b72cde42.bak   # every version
+<out>/<product>/<serial>/_powermeter/                 # or standalone <out>/powermeter/<serial>/
+    manifest.json                                     # kind: "powermeter"
+    combiner_power.latest.json                        # newest record of each measurement_type
+    records/2026-09-10T11-43-39Z__76d36f96.json       # every measurement record (full backend row)
 ```
 
+`--serial` filters `instrument_serial` for luminosa/solira and `system_serial` for powermeter.
 Re-runs are incremental (an artifact already in `manifest.json` is skipped, no hashing) and
 append-only — **no prune / retention in this increment**. Overlapping runs: the second logs
 "another run in progress" and exits 0. If a run reports `skipped=N` with a `#` line about an

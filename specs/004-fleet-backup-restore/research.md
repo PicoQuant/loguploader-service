@@ -146,3 +146,39 @@ weighed.
 - **Manual E2E** (`quickstart.md`): a real run against `api.picoquant.com` with the `.env`
   admin key; re-run shows 0 downloads; a byte-exact spot check of one archived file vs the
   backend `…/content`. (Already demonstrated this session against `v2.0.0-beta.2` data.)
+
+## D10. Power-measurement archival (US2 — added 2026-09-10)
+
+- **Decision**: the same run also sweeps `GET /api/v2/admin/products/powermeter/telemetry`
+  (paged `limit`/`offset`, stop on a short page or `offset >= total`) and archives **every**
+  record it returns, of any `measurement_type`, as one JSON file. `--serial` filters
+  `system_serial`; `--since`/`--until` pass through. `powermeter` is a `--product` choice; the
+  default run does luminosa + solira + powermeter.
+- **The list row is the artifact**. Verified live: `…/telemetry/{id}` returns `404` — there is
+  no per-record content endpoint, and the list row already carries the full nested `payload`
+  (the `combiner_power` schema, ~5–15 KB). So the archive stores the row itself
+  (`json.dumps(row, sort_keys=True, indent=2)`), not a downloaded body.
+- **No backend digest**. Telemetry rows have no `content_sha256`. The archive computes its own
+  SHA-256 of the stored bytes for the manifest and the rebuild-from-disk path; there is
+  nothing external to verify against, so D5's digest-verify step is simply skipped for
+  `powermeter` (noted in FR-024). Integrity here means "exactly the bytes the list returned".
+- **Layout & location** — records group by `system_serial` (the PicoQuant instrument, e.g.
+  `1051032`), which has **no `machine_id`** (a technician submits them from a laptop). So the
+  `_powermeter` folder sits at the *serial* level, not the machine level:
+  - reuse an existing location if a `_powermeter/manifest.json` is already present under
+    `luminosa/<serial>/`, `solira/<serial>/`, or `powermeter/<serial>/`;
+  - else, for a first-seen system, nest at `<product>/<serial>/_powermeter/` if that
+    instrument folder already exists in the archive, otherwise stand alone at
+    `powermeter/<serial>/` (`powermeter/unknown/` when `system_serial` is absent).
+  The choice is written to the manifest's `location` field and never recomputed — a later run
+  that finds a new instrument folder does **not** move already-filed records (spec edge case).
+- **Manifest**: `_powermeter/manifest.json`, `kind: "powermeter"`, `schema_version` 1, an
+  `id`-keyed record list — same incremental-cursor contract as D3. Rebuilt by reading each
+  `records/*.json` (the backend `id` is inside the file, unlike the `.bak` case). A
+  `<measurement_type>.latest.json` mirror gives quick access to the newest of each type.
+- **Alternatives**:
+  - *A top-level `telemetry/` tree* — rejected; nesting power data with its instrument keeps a
+    machine's whole story (config + optical throughput) in one place for the deferred
+    inspection increment.
+  - *Correlating to `machine_id`* — impossible from the record (no such field) and unnecessary;
+    the system serial is the unit these measurements are about.

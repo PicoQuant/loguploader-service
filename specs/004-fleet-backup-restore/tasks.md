@@ -1,5 +1,5 @@
 ---
-description: "Task list for Fleet Backup Archive (spec 004, US1 only)"
+description: "Task list for Fleet Backup Archive (spec 004 — US1 archive pull, US2 power-record archival)"
 ---
 
 # Tasks: Fleet Backup Archive
@@ -13,9 +13,9 @@ service, nothing deployed to instruments).
 concrete `unittest` suite with named cases, HTTP faked, no network. Test tasks are listed in
 the US1 phase; write them alongside or before the code they cover.
 
-**Scope**: US1 (the archive pull) only. Restore, inspection, and stale-instrument detection are
-**Deferred** (spec). This increment **evolves the existing seed** `tools/fleet_backup_pull.py`
-— it is not a new file.
+**Scope**: US1 (the archive pull) + **US2** (laser-power measurement-record archival, added
+2026-09-10). Restore, inspection, and stale-instrument detection are **Deferred** (spec). This
+increment **evolves the existing seed** `tools/fleet_backup_pull.py` — it is not a new file.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -99,12 +99,60 @@ backend backup the archive holds → the archived copy stays, run still succeeds
 
 ---
 
+## Phase 5: User Story 2 — Laser-power measurement records accumulate in the archive (Priority: P1)
+
+**Added 2026-09-10.** Folded into the same script + same run as US1 — reuses the lock,
+`ProductResult` / exit codes, `write_atomic`, `safe_segment`, `_first_nondir_component`.
+**Independent Test**: `quickstart.md` §3b — pull fills `powermeter/<serial>/…` (or nests it
+under an existing instrument folder); re-run adds nothing; one archived record byte-matches
+the backend list row; removing a backend record leaves the archived copy intact.
+
+### Tests for User Story 2 (`tools/test_fleet_backup_pull.py`)
+
+- [X] T033 [P] [US2] `FakeApi.list_telemetry` + `make_power_rec` helper + `Base.run_power`.
+- [X] T034 [P] [US2] `test_record_filename` — `<measured_at ':'→'-'>__<id8>.json`.
+- [X] T035 [P] [US2] `test_commit_and_append_only` — good row written, no `.part`; a pre-existing file is never overwritten.
+- [X] T036 [P] [US2] `test_incremental_skip_by_id` — second run: 0 added, archive byte-identical.
+- [X] T037 [P] [US2] `test_paging` — 2 full pages + a short page → every record archived once.
+- [X] T038 [P] [US2] `test_nest_under_existing_instrument_folder` / `test_standalone_when_no_instrument_folder`.
+- [X] T039 [P] [US2] `test_location_pinned_once_chosen` — standalone-then-instrument-folder-appears → records stay put.
+- [X] T040 [P] [US2] `test_latest_mirror_per_measurement_type` — newest per type mirrored to `<type>.latest.json`.
+- [X] T041 [P] [US2] `test_manifest_rebuild_from_records` — corrupt manifest → rebuilt from `records/*.json`; still drives the skip.
+- [X] T042 [P] [US2] `test_unknown_system_serial` → `powermeter/unknown/`.
+- [X] T043 [P] [US2] `test_product_inaccessible_is_skipped` — `403` on powermeter → SKIPPED, config products unaffected.
+- [X] T044 [P] [US2] `test_main_end_to_end_and_key_redaction` — mixed run; `records=1` in the summary; sentinel key in no file / no output line.
+
+### Implementation for User Story 2 (`tools/fleet_backup_pull.py`)
+
+- [X] T045 [US2] `POWERMETER` / `SELECTABLE_PRODUCTS` constants; `--product` choices += `powermeter`; `--serial` help note; `Config.powermeter` + `load_config` split (selected → `products` ∩ PRODUCTS, `powermeter` flag).
+- [X] T046 [US2] `Api.list_telemetry(product, *, system_serial, since, until)` — paged `GET …/telemetry`, `records` envelope, stop on short page or `offset >= total`.
+- [X] T047 [US2] `power_record_filename`, `PowerRecordEntry`, `PowerManifest` (+ `from_dict` / `ids`), `_power_manifest_path`.
+- [X] T048 [US2] `resolve_power_dir(out_root, system_serial)` — reuse an existing `_powermeter` manifest; else nest under `<product>/<serial>/` if that folder exists; else standalone `powermeter/<serial>/` (`unknown` when absent).
+- [X] T049 [US2] `commit_power_record` (canonical `json.dumps(sort_keys, indent=2)`, own sha256, append-only), `load_power_manifest` / `save_power_manifest` (`kind: "powermeter"`, atomic), `rebuild_power_manifest_from_disk` (scan `records/*.json`, id from the file).
+- [X] T050 [US2] `discover_power(api, serials, since, until)` — sweep, `ApiAuthError`/`ApiError` → inaccessible/sweep-failed `ProductResult`, group by `system_serial`.
+- [X] T051 [US2] `pull_power_system(...)` — load/rebuild manifest, skip known ids, `commit_power_record`, recompute `is_latest` per `measurement_type`, refresh `<type>.latest.json`, `save_power_manifest`; `_first_nondir_component` guard.
+- [X] T052 [US2] `main` — after the config machine loop, `if cfg.powermeter:` `discover_power` → append `ProductResult` → loop `pull_power_system`. `print_summary` powermeter branch (`systems=` / `records=`).
+
+**Checkpoint**: `quickstart.md` §3b passes against the real backend (2026-09-10 — system
+`1051032`, 5 `combiner_power` records, first pull `records=5` / exit 0, re-run `records=0`,
+archived JSON == backend list row; nested under `luminosa/1051032/_powermeter/` when that
+instrument folder exists, standalone `powermeter/1051032/` otherwise).
+
+### Polish (US2)
+
+- [X] T053 [P] [US2] `README.MD` fleet-backup section — the powermeter sweep, the two layouts, `--product powermeter`, `--serial` = system_serial.
+- [X] T054 [US2] `python -m unittest discover -s tools -p 'test_*.py'` → 36 tests green; no real network I/O. `.gitignore` `/fleet-backups` already covers the standalone `powermeter/` tree.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase order
 
-- **Setup (P1)** → **Foundational (P2)** → **US1 (P3)** → **Polish (P4)**.
-- Foundational blocks US1 entirely. There is only one user story, so US1 *is* the MVP.
+- **Setup (P1)** → **Foundational (P2)** → **US1 (P3)** → **Polish (P4)** → **US2 (P5)**.
+- Foundational blocks US1 entirely. US2 was added after US1 shipped and reuses the Foundational
+  layer (lock, `ProductResult`, `write_atomic`); its own units (T045–T052) are sequential in
+  the one file, its tests (T033–T044) all `[P]`.
 
 ### Within-phase
 

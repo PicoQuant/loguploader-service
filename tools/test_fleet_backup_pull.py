@@ -49,11 +49,31 @@ def make_row(rid, *, content=b"data", serial="SN-1", machine="M-1", file_key="pq
     }
 
 
+def make_power_rec(rid, *, system_serial="1051032", instrument_serial="M01333314",
+                   measurement_type="combiner_power", received="2026-09-10T11:00:00.000000Z",
+                   measured="2026-09-10T10:59:00Z", payload=None):
+    """One powermeter telemetry list row (carries the full payload — it is the artifact)."""
+    return {
+        "id": rid,
+        "product_key": "powermeter",
+        "instrument_serial": instrument_serial,
+        "system_serial": system_serial,
+        "measurement_type": measurement_type,
+        "received_at": received,
+        "measured_at": measured,
+        "submitted_by": "tech@picoquant.com",
+        "auth_kind": "session",
+        "payload": payload if payload is not None else {"schema": "pm100.v2", "records": [{"w": rid}]},
+    }
+
+
 class FakeApi:
     """Serves canned pages + content extracted from the rows; records download calls."""
 
-    def __init__(self, pages_by_product=None, *, auth_errors=(), list_errors=(), drop_ids=()):
+    def __init__(self, pages_by_product=None, *, auth_errors=(), list_errors=(), drop_ids=(),
+                 telemetry_by_product=None):
         self.pages = pages_by_product or {}          # product -> list[list[row]]
+        self.telemetry = telemetry_by_product or {}  # product -> list[list[record]]
         self.auth_errors = set(auth_errors)
         self.list_errors = set(list_errors)
         self.drop_ids = set(drop_ids)                # ids the backend has "pruned"
@@ -74,6 +94,17 @@ class FakeApi:
                 if instrument_serial and r.get("instrument_serial") != instrument_serial:
                     continue
                 yield {k: v for k, v in r.items() if k != "_content_b64"}
+
+    def list_telemetry(self, product, *, system_serial=None, since=None, until=None):
+        if product in self.auth_errors:
+            raise fbp.ApiAuthError(403)
+        if product in self.list_errors:
+            raise fbp.ApiError("boom")
+        for page in self.telemetry.get(product, []):
+            for r in page:
+                if system_serial and r.get("system_serial") != system_serial:
+                    continue
+                yield dict(r)
 
     def download(self, product, backup_id):
         self.download_calls.append(backup_id)
@@ -98,6 +129,17 @@ class Base(unittest.TestCase):
             results[product].machines_seen += 1
             fbp.pull_machine(api, product, serial, machine_id, rows, self.tmp,
                              results[product], rebuild=rebuild, quiet=True)
+        report.finished_utc = fbp.now_iso()
+        return report
+
+    def run_power(self, api, serials=(), rebuild=False):
+        report = fbp.RunReport(started_utc=fbp.now_iso())
+        groups, pr = fbp.discover_power(api, list(serials), None, None)
+        report.products = [pr]
+        for system_serial, recs in sorted(groups.items()):
+            pr.machines_seen += 1
+            fbp.pull_power_system(system_serial, recs, self.tmp, pr,
+                                  rebuild=rebuild, quiet=True)
         report.finished_utc = fbp.now_iso()
         return report
 
@@ -399,6 +441,136 @@ class TestMainEndToEnd(Base):
         for f in arch.rglob("*"):
             if f.is_file():
                 self.assertNotIn(sentinel.encode(), f.read_bytes(), f"leak in {f}")
+
+
+# --------------------------------------------------------------------------- powermeter (spec 004 US2)
+
+
+class TestPowermeter(Base):
+    def test_record_filename(self):
+        self.assertEqual(
+            fbp.power_record_filename("2026-09-10T11:43:39Z", "76d36f96-3c4c-49"),
+            "2026-09-10T11-43-39Z__76d36f96.json")
+        self.assertEqual(
+            fbp.power_record_filename("2026-09-03T14:11:54.279791Z", "34a9b463" + "-x"),
+            "2026-09-03T14-11-54Z__34a9b463.json")
+
+    def test_commit_and_append_only(self):
+        d = self.tmp / "powermeter" / "1051032"
+        rec = make_power_rec("id-1")
+        e1 = fbp.commit_power_record(d, rec)
+        self.assertIsInstance(e1, fbp.PowerRecordEntry)
+        p = d / e1.record_file
+        self.assertTrue(p.is_file())
+        self.assertFalse(list(d.rglob("*.part")))
+        p.write_text("SENTINEL", encoding="utf-8")            # pretend an archived file
+        e2 = fbp.commit_power_record(d, rec)                  # same record again
+        self.assertIsInstance(e2, fbp.PowerRecordEntry)
+        self.assertEqual(p.read_text(encoding="utf-8"), "SENTINEL", "never overwritten")
+
+    def test_incremental_skip_by_id(self):
+        recs = [make_power_rec("id-1"), make_power_rec("id-2", received="2026-09-10T12:00:00.0Z")]
+        api = FakeApi(telemetry_by_product={"powermeter": [recs]})
+        r1 = self.run_power(api)
+        self.assertEqual(r1.products[0].artifacts_added, 2)
+        d = self.tmp / "powermeter" / "1051032"
+        snap = sorted((f, f.read_bytes()) for f in d.rglob("*") if f.is_file())
+        r2 = self.run_power(api)
+        self.assertEqual(r2.products[0].artifacts_added, 0)
+        self.assertEqual(sorted((f, f.read_bytes()) for f in d.rglob("*") if f.is_file()), snap)
+
+    def test_paging(self):
+        pg1 = [make_power_rec(f"a{i}", received=f"2026-09-10T10:{i:02d}:00.0Z") for i in range(fbp.PAGE)]
+        pg2 = [make_power_rec("b0", received="2026-09-10T13:00:00.0Z")]
+        api = FakeApi(telemetry_by_product={"powermeter": [pg1, pg2]})
+        rep = self.run_power(api)
+        self.assertEqual(rep.products[0].artifacts_added, fbp.PAGE + 1)
+
+    def test_nest_under_existing_instrument_folder(self):
+        (self.tmp / "luminosa" / "1051032" / "MACH-A").mkdir(parents=True)
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1")]]})
+        self.run_power(api)
+        self.assertTrue((self.tmp / "luminosa" / "1051032" / "_powermeter" / "manifest.json").is_file())
+        self.assertFalse((self.tmp / "powermeter").exists())
+
+    def test_standalone_when_no_instrument_folder(self):
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1")]]})
+        self.run_power(api)
+        self.assertTrue((self.tmp / "powermeter" / "1051032" / "manifest.json").is_file())
+
+    def test_location_pinned_once_chosen(self):
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1")]]})
+        self.run_power(api)                                   # -> standalone powermeter/1051032/
+        (self.tmp / "luminosa" / "1051032" / "MACH-A").mkdir(parents=True)  # instrument folder appears
+        api2 = FakeApi(telemetry_by_product={
+            "powermeter": [[make_power_rec("id-1"), make_power_rec("id-2", received="2026-09-11T00:00:00Z")]]})
+        self.run_power(api2)
+        self.assertFalse((self.tmp / "luminosa" / "1051032" / "_powermeter").exists())
+        m = fbp.load_power_manifest(self.tmp / "powermeter" / "1051032", "1051032", "powermeter")
+        self.assertEqual(m.ids(), {"id-1", "id-2"})
+
+    def test_latest_mirror_per_measurement_type(self):
+        old = make_power_rec("id-old", received="2026-09-01T00:00:00Z", payload={"v": "old"})
+        new = make_power_rec("id-new", received="2026-09-09T00:00:00Z", payload={"v": "new"})
+        other = make_power_rec("id-o", measurement_type="single_line", received="2026-09-05T00:00:00Z")
+        api = FakeApi(telemetry_by_product={"powermeter": [[old, new, other]]})
+        self.run_power(api)
+        d = self.tmp / "powermeter" / "1051032"
+        self.assertEqual(json.loads((d / "combiner_power.latest.json").read_text())["id"], "id-new")
+        self.assertEqual(json.loads((d / "single_line.latest.json").read_text())["id"], "id-o")
+
+    def test_manifest_rebuild_from_records(self):
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1"), make_power_rec("id-2",
+                     received="2026-09-10T12:00:00Z")]]})
+        self.run_power(api)
+        d = self.tmp / "powermeter" / "1051032"
+        (d / "manifest.json").write_text("{ corrupt", encoding="utf-8")
+        m = fbp.load_power_manifest(d, "1051032", "powermeter")
+        self.assertEqual(m.ids(), {"id-1", "id-2"})
+        self.assertTrue(any(e.is_latest for e in m.records))
+        # rebuilt manifest still drives the incremental skip
+        rep = self.run_power(api, rebuild=True)
+        self.assertEqual(rep.products[0].artifacts_added, 0)
+
+    def test_unknown_system_serial(self):
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1", system_serial="")]]})
+        self.run_power(api)
+        self.assertTrue((self.tmp / "powermeter" / "unknown" / "manifest.json").is_file())
+
+    def test_product_inaccessible_is_skipped(self):
+        api = FakeApi(telemetry_by_product={"powermeter": [[make_power_rec("id-1")]]},
+                      auth_errors=["powermeter"])
+        rep = self.run_power(api)
+        self.assertFalse(rep.products[0].accessible)
+        self.assertFalse((self.tmp / "powermeter").exists())
+
+    def test_main_end_to_end_and_key_redaction(self):
+        sentinel = "SENTINEL-ADMIN-KEY-power"
+        api = FakeApi(
+            pages_by_product={"luminosa": [[make_row("id-1", content=b"conf")]]},
+            telemetry_by_product={"powermeter": [[make_power_rec("pm-1")]]},
+        )
+        real = fbp.Api
+        fbp.Api = lambda *a, **k: api
+        os.environ["EXPECTED_ADMIN_API_KEY"] = sentinel
+        out, err = io.StringIO(), io.StringIO()
+        arch = self.tmp / "arch"
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                code = fbp.main(["--out", str(arch), "--product", "luminosa",
+                                 "--product", "powermeter", "--env", str(self.tmp / "no-env")])
+        finally:
+            fbp.Api = real
+            os.environ.pop("EXPECTED_ADMIN_API_KEY", None)
+        self.assertEqual(code, 0)
+        self.assertIn("powermeter", out.getvalue())
+        self.assertIn("records=1", out.getvalue())
+        self.assertTrue((arch / "powermeter" / "1051032" / "manifest.json").is_file())
+        for f in arch.rglob("*"):
+            if f.is_file():
+                self.assertNotIn(sentinel.encode(), f.read_bytes(), f"leak in {f}")
+        self.assertNotIn(sentinel, out.getvalue())
+        self.assertNotIn(sentinel, err.getvalue())
 
 
 if __name__ == "__main__":
