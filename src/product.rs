@@ -110,34 +110,45 @@ pub struct WatchedFileSpec {
     /// Path (Fixed) or `dir\*.ext` glob (Glob), relative to `root`. Backslash-separated.
     pub rel: &'static str,
     pub kind: FileKind,
+    /// `true`  — back up at most once per UTC day (FR-011).
+    /// `false` — back up on *every* observed content change, no daily gate (FR-011a).
+    pub daily_limit: bool,
 }
 
 /// FR-008: PQDevice.db + PQDevice.conf under InstallDir; `*.xml` under DataDir;
 /// `UserSettings\*.xml` under DataDir. Logs excluded.
+///
+/// FR-011a: `PQDevice.db` / `PQDevice.conf` are the instrument's live device state and must
+/// be captured on every change, so they carry `daily_limit: false`. The settings `*.xml`
+/// files stay on the once-per-UTC-day gate.
 static WATCHED: &[WatchedFileSpec] = &[
     WatchedFileSpec {
         file_key: "pqdevice_db",
         root: FileRoot::InstallDir,
         rel: "PQDevice.db",
         kind: FileKind::Fixed,
+        daily_limit: false,
     },
     WatchedFileSpec {
         file_key: "pqdevice_conf",
         root: FileRoot::InstallDir,
         rel: "PQDevice.conf",
         kind: FileKind::Fixed,
+        daily_limit: false,
     },
     WatchedFileSpec {
         file_key: "settings/",
         root: FileRoot::DataDir,
         rel: r"*.xml",
         kind: FileKind::Glob,
+        daily_limit: true,
     },
     WatchedFileSpec {
         file_key: "usersettings/",
         root: FileRoot::DataDir,
         rel: r"UserSettings\*.xml",
         kind: FileKind::Glob,
+        daily_limit: true,
     },
 ];
 
@@ -174,5 +185,17 @@ mod tests {
             keys,
             ["pqdevice_db", "pqdevice_conf", "settings/", "usersettings/"]
         );
+    }
+
+    #[test]
+    fn only_pqdevice_files_are_exempt_from_the_daily_limit() {
+        for spec in WATCHED {
+            let exempt = matches!(spec.file_key, "pqdevice_db" | "pqdevice_conf");
+            assert_eq!(
+                spec.daily_limit, !exempt,
+                "{}: unexpected daily_limit",
+                spec.file_key
+            );
+        }
     }
 }

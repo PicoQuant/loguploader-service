@@ -30,15 +30,16 @@ The set for a product, from `product.rs` (FR-008). Each entry:
 | `root` | enum `InstallDir` \| `DataDir` | which product root it lives under |
 | `rel` | `&'static str` | path or glob relative to `root` |
 | `kind` | enum `Fixed` \| `Glob` | `Glob` expands to 0..n concrete files at cycle time |
+| `daily_limit` | `bool` | `true` → once-per-UTC-day gate (FR-011); `false` → send on every change (FR-011a) |
 
 **Luminosa entries** (Solira: same with `Solira` root paths):
 
-| file_key | root | rel |
-|---|---|---|
-| `pqdevice_db` | InstallDir | `PQDevice.db` |
-| `pqdevice_conf` | InstallDir | `PQDevice.conf` |
-| `settings/<name>.xml` | DataDir | `*.xml` (glob; `file_key` = `settings/` + filename) |
-| `usersettings/<name>.xml` | DataDir | `UserSettings\*.xml` (glob; `file_key` = `usersettings/` + filename) |
+| file_key | root | rel | daily_limit |
+|---|---|---|---|
+| `pqdevice_db` | InstallDir | `PQDevice.db` | `false` |
+| `pqdevice_conf` | InstallDir | `PQDevice.conf` | `false` |
+| `settings/<name>.xml` | DataDir | `*.xml` (glob; `file_key` = `settings/` + filename) | `true` |
+| `usersettings/<name>.xml` | DataDir | `UserSettings\*.xml` (glob; `file_key` = `usersettings/` + filename) | `true` |
 
 The backend accepts `file_key` only in `[a-z0-9_./-]` (spec 003). The real on-disk
 filename (`ChromophoreList.xml`, `GUI Settings.xml`, …) is therefore normalised for the
@@ -56,6 +57,7 @@ One concrete file discovered this cycle.
 | `file_key` | `String` | for globs, includes the real filename |
 | `abs_path` | `PathBuf` | canonical location (FR-009) |
 | `read_result` | enum | `Ok(bytes, sha256, mtime)` \| `Locked` \| `Absent` \| `TooLarge(size)` |
+| `daily_limit` | `bool` | carried from the `WatchedFileSpec` (FR-011a) |
 
 ## LocalBackupState (persisted — `state.json`)
 
@@ -74,7 +76,7 @@ Atomic-write JSON at `<data_dir>\v2agent\state.json`. Survives reboot + v2 self-
 | Field | Type | Notes |
 |---|---|---|
 | `last_backup_sha256` | 64 hex string | change-detection baseline (FR-010) |
-| `last_backup_utc_day` | `YYYY-MM-DD` | once-per-day gate (FR-011) |
+| `last_backup_utc_day` | `YYYY-MM-DD` | once-per-day gate (FR-011); recorded for every file but ignored for `daily_limit == false` (FR-011a) |
 | `last_success_utc` | RFC3339 string | |
 
 **State transitions for one file within a cycle**
@@ -84,15 +86,17 @@ missing in state  ──(file present, readable)──▶ send backup ──(200
                   └─(file absent)─────────────▶ no-op, note "absent" in heartbeat
 
 have state, sha == last_backup_sha256 ─────────▶ skip (unchanged)                (FR-010)
-have state, sha != last, day == today  ─────────▶ skip (already backed up today) (FR-011)
+have state, sha != last, daily_limit, day == today ─▶ skip (already backed up today) (FR-011)
+have state, sha != last, !daily_limit           ─▶ send backup ──(200)──▶ update {sha, day, ts}  (FR-011a)
 have state, sha != last, day <  today   ─────────▶ send backup ──(200)──▶ update {sha, day, ts}
 send backup ──(4xx bad-request / too-large)────▶ do NOT update; mark blocked; surface in heartbeat; no blind retry (FR-014, FR-027)
 send backup ──(401 / 5xx / no network)─────────▶ do NOT update; retry next cycle (FR-012)
 ```
 
-`last_backup_utc_day` is only advanced on a confirmed `200`. A file changing twice in a day
-is captured once (first successful send); later same-day changes wait for tomorrow (accepted,
-spec US2 scenario 2 / Edge Cases).
+`last_backup_utc_day` is only advanced on a confirmed `200`. For a daily-limited file, a file
+changing twice in a day is captured once (first successful send); later same-day changes wait
+for tomorrow (accepted, spec US2 scenario 2 / Edge Cases). `PQDevice.db` / `PQDevice.conf`
+(`daily_limit == false`) are sent on every same-day change (FR-011a).
 
 ## HeartbeatPayload (wire — `POST .../telemetry`)
 
@@ -135,7 +139,8 @@ Full contract in `contracts/backend-api.md`.
 | `client_timestamp` | text RFC3339 | no | cycle start |
 
 Response of interest: `200` `{ id, deduplicated, size_bytes, received_at }`. `deduplicated:
-true` is still success — advance `last_backup_utc_day`.
+true` is still success — record `{sha, day, ts}` (and, for a daily-limited file, advance the
+gate).
 
 ## CycleRecord / CycleSummary (local log + state)
 

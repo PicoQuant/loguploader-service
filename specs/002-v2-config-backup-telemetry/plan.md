@@ -10,7 +10,8 @@ Rebuild the log-uploader as a small, unattended **Windows service** that no long
 instrument logs. It does two things on a fixed cycle: (1) POST a **telemetry heartbeat**
 (machine id, instrument serial, v2 version, OS) to `api.picoquant.com`, and (2) back up a
 per-product set of **device configuration files** to that backend's backup endpoint — only
-when a file's content changed since its last successful backup, at most once per UTC day.
+when a file's content changed since its last successful backup; settings `*.xml` files at
+most once per UTC day, `PQDevice.db` / `PQDevice.conf` on every change (FR-011a).
 
 Transport is the PicoQuant Telemetry API, authenticated with a **per-product, non-expiring
 fleet token** compiled into the build from a CI secret (one build per product: `luminosa`,

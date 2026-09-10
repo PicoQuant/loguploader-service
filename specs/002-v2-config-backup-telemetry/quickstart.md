@@ -48,10 +48,15 @@ Re-run immediately:
 ```
 pquploader-luminosa.exe once
 ```
-Expected: heartbeat `ok` again; every file now `unchanged` or `skipped_today` (nothing
-`sent`) — proves change detection + the once-per-UTC-day gate (SC-003, SC-004).
+Expected: heartbeat `ok` again; every file now `unchanged` (nothing changed) — proves
+change detection (SC-003).
 
-Modify one watched file, run `once` again → exactly that file `sent`; others `unchanged`.
+Modify a settings `*.xml` file, run `once` again → that file `sent`; run `once` a third time
+without touching it → `unchanged`; touch it again the same day → `skipped_today` (the
+once-per-UTC-day gate, SC-004).
+
+Modify `PQDevice.conf`, run `once`, modify it again, run `once` → `sent` both times: the
+`PQDevice` files are exempt from the daily gate (FR-011a).
 
 ## 3. Confirm it landed (backend admin queries)
 

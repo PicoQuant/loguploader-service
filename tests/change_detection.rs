@@ -16,7 +16,10 @@ fn prev(sha: &str, day: &str) -> FileBackupState {
 #[test]
 fn first_run_with_no_state_sends() {
     let sha = sha256_hex(b"<config/>");
-    assert_eq!(decide_action(None, &sha, "2026-09-08"), Decision::Send);
+    assert_eq!(
+        decide_action(None, &sha, "2026-09-08", true),
+        Decision::Send
+    );
 }
 
 #[test]
@@ -24,7 +27,17 @@ fn unchanged_content_is_skipped_even_on_a_new_day() {
     let sha = sha256_hex(b"<config/>");
     let state = prev(&sha, "2026-09-01");
     assert_eq!(
-        decide_action(Some(&state), &sha, "2026-09-08"),
+        decide_action(Some(&state), &sha, "2026-09-08", true),
+        Decision::Unchanged
+    );
+}
+
+#[test]
+fn unchanged_content_is_skipped_regardless_of_the_daily_limit() {
+    let sha = sha256_hex(b"<config/>");
+    let state = prev(&sha, "2026-09-08");
+    assert_eq!(
+        decide_action(Some(&state), &sha, "2026-09-08", false),
         Decision::Unchanged
     );
 }
@@ -35,7 +48,7 @@ fn changed_content_on_a_later_day_sends() {
     let new = sha256_hex(b"<config v=2/>");
     let state = prev(&old, "2026-09-07");
     assert_eq!(
-        decide_action(Some(&state), &new, "2026-09-08"),
+        decide_action(Some(&state), &new, "2026-09-08", true),
         Decision::Send
     );
 }

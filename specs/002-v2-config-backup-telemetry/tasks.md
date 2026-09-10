@@ -181,6 +181,20 @@ red-first ordering but should be written alongside or before the code they cover
 
 ---
 
+## Phase 9: Post-release amendments
+
+- [X] T051 **FR-011a — `PQDevice.db` / `PQDevice.conf` exempt from the once-per-day gate.**
+  Add `daily_limit: bool` to `WatchedFileSpec` (`src/product.rs`, `false` for the two
+  `PQDevice` files, `true` for the settings globs); carry it through `ResolvedWatchedFile`
+  (`src/watchset.rs`); `decide_action` in `src/backup.rs` takes `daily_limit` and only
+  returns `SkippedToday` when it is `true`. Tests: `src/product.rs` unit
+  (`only_pqdevice_files_are_exempt_from_the_daily_limit`), `tests/change_detection.rs` +
+  `tests/daily_limit_utc.rs` updated for the new arg and the exempt-file send-every-change
+  case. FR-010 (send only on content change) and FR-012 (failure doesn't record success)
+  unchanged.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase order

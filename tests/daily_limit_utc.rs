@@ -27,8 +27,20 @@ fn changed_file_already_backed_up_today_is_gated() {
     let new = sha256_hex(b"v2");
     let state = prev(&old, "2026-09-08");
     assert_eq!(
-        decide_action(Some(&state), &new, "2026-09-08"),
+        decide_action(Some(&state), &new, "2026-09-08", true),
         Decision::SkippedToday
+    );
+}
+
+#[test]
+fn a_daily_limit_exempt_file_sends_on_every_change_same_day() {
+    // FR-011a: PQDevice.db / PQDevice.conf carry daily_limit == false.
+    let old = sha256_hex(b"v1");
+    let new = sha256_hex(b"v2");
+    let state = prev(&old, "2026-09-08");
+    assert_eq!(
+        decide_action(Some(&state), &new, "2026-09-08", false),
+        Decision::Send
     );
 }
 
@@ -42,13 +54,16 @@ fn cycle_straddling_midnight_uses_the_start_day_for_every_file() {
     let new = sha256_hex(b"changed just before midnight");
     let state = prev(&sha256_hex(b"older"), "2026-09-07");
     // day-before-today -> send
-    assert_eq!(decide_action(Some(&state), &new, &day), Decision::Send);
+    assert_eq!(
+        decide_action(Some(&state), &new, &day, true),
+        Decision::Send
+    );
     // and once recorded for "the 8th", a second change the same wall-clock-day is gated
     let mut s = LocalBackupState::default();
     s.record_success("k", &new, &day, "2026-09-08T23:59:59Z");
     let newer = sha256_hex(b"changed again after midnight but same cycle-day");
     assert_eq!(
-        decide_action(s.file("k"), &newer, &day),
+        decide_action(s.file("k"), &newer, &day, true),
         Decision::SkippedToday
     );
 }

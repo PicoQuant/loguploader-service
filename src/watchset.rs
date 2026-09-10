@@ -29,6 +29,8 @@ pub struct ResolvedWatchedFile {
     pub file_key: String,
     pub abs_path: PathBuf,
     pub read_result: ReadResult,
+    /// Carried from the `WatchedFileSpec`: `false` means "send on every change" (FR-011a).
+    pub daily_limit: bool,
 }
 
 /// Expand every spec and read each resolved file. Order follows the table; globs expand
@@ -50,11 +52,12 @@ pub fn resolve_and_read(cfg: &Config) -> Vec<ResolvedWatchedFile> {
                     spec.file_key.to_string(),
                     abs,
                     cfg.backup_max_bytes,
+                    spec.daily_limit,
                 ));
             }
             FileKind::Glob => {
                 for (key, abs) in expand_glob(spec, root) {
-                    out.push(read_one(key, abs, cfg.backup_max_bytes));
+                    out.push(read_one(key, abs, cfg.backup_max_bytes, spec.daily_limit));
                 }
             }
         }
@@ -120,12 +123,18 @@ fn sanitize_key_component(name: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-fn read_one(file_key: String, abs_path: PathBuf, max_bytes: u64) -> ResolvedWatchedFile {
+fn read_one(
+    file_key: String,
+    abs_path: PathBuf,
+    max_bytes: u64,
+    daily_limit: bool,
+) -> ResolvedWatchedFile {
     let read_result = read_consistent(&abs_path, max_bytes);
     ResolvedWatchedFile {
         file_key,
         abs_path,
         read_result,
+        daily_limit,
     }
 }
 
@@ -277,6 +286,7 @@ mod tests {
             root: FileRoot::DataDir,
             rel: "*.xml",
             kind: FileKind::Glob,
+            daily_limit: true,
         };
         let got = expand_glob(&spec, &d);
         let keys: Vec<_> = got.iter().map(|(k, _)| k.clone()).collect();

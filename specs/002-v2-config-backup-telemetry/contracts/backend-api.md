@@ -77,7 +77,8 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
   "received_at": "...", "deduplicated": false }
 ```
 `deduplicated: true` is returned for byte-identical re-sends and is **also success** — the
-client advances `last_backup_utc_day` (verified behaviour).
+client records `{sha, day, ts}` and, for a daily-limited file, advances the once-per-day gate
+(verified behaviour). `pqdevice_db` / `pqdevice_conf` are exempt from that gate (FR-011a).
 
 **Errors → client category**: `401` → `Auth`; `413` (over `CONFIG_BACKUP_MAX_BYTES`, backend
 default 50 MB) → `TooLarge` (skip, surface, no blind retry — FR-014); `422` (sha mismatch /

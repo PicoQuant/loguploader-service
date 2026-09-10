@@ -376,7 +376,7 @@ Expected: `200` with `{ ok, id, received_at, ... }`. Client treats any `2xx` as 
 `401` as auth failure (category `authentication`), `413`/`422` as non-retryable, `5xx` /
 network as retryable.
 
-### Config backup (per changed file, ≤ once per file per UTC day)
+### Config backup (per changed file; settings files ≤ once per file per UTC day, `PQDevice.db`/`PQDevice.conf` on every change — spec 002 FR-011a)
 
 ```
 POST /api/v2/products/{luminosa|solira}/backup
@@ -393,9 +393,11 @@ file_mtime=<ISO-8601>
 agent_version=<v2 build version>
 client_timestamp=<ISO-8601>
 ```
-Expected: `200` with `{ ok, id, deduplicated, received_at, ... }`. Only a `200` marks the
-file backed-up for that UTC day; anything else → retry next cycle (except `413`/`422` which
-the client records as skip-with-reason and surfaces in the next heartbeat).
+Expected: `200` with `{ ok, id, deduplicated, received_at, ... }`. Only a `200` records the
+file as backed-up (and, for a daily-limited settings file, consumes that UTC day's
+allowance); anything else → retry next cycle (except `413`/`422` which the client records as
+skip-with-reason and surfaces in the next heartbeat). The backend contract is identical for
+both file classes — the once-per-day gate is entirely client-side.
 
 ### Luminosa watched files (client side, for reference)
 

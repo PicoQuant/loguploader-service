@@ -16,7 +16,8 @@ use crate::watchset::{self, ReadResult};
 pub enum Decision {
     /// sha == last successful backup — nothing to do (FR-010).
     Unchanged,
-    /// changed, but already backed up today (UTC) — wait for tomorrow (FR-011).
+    /// changed, but already backed up today (UTC) and the file is daily-gated — wait for
+    /// tomorrow (FR-011). Never returned for files with `daily_limit == false` (FR-011a).
     SkippedToday,
     /// no state (first run, FR-016) or changed since a day before today — send.
     Send,
@@ -24,14 +25,18 @@ pub enum Decision {
 
 /// Pure decision function — no I/O, unit-tested by `tests/change_detection.rs` +
 /// `tests/daily_limit_utc.rs`.
+///
+/// `daily_limit == false` (FR-011a): a changed file is always `Send`, however many times it
+/// already went out today.
 pub fn decide_action(
     prev: Option<&FileBackupState>,
     current_sha256: &str,
     today_utc: &str,
+    daily_limit: bool,
 ) -> Decision {
     match prev {
         Some(fs) if fs.last_backup_sha256 == current_sha256 => Decision::Unchanged,
-        Some(fs) if fs.last_backup_utc_day == today_utc => Decision::SkippedToday,
+        Some(fs) if daily_limit && fs.last_backup_utc_day == today_utc => Decision::SkippedToday,
         _ => Decision::Send,
     }
 }
@@ -60,6 +65,7 @@ pub fn run_pass(
             &file.file_key,
             &file.abs_path,
             file.read_result,
+            file.daily_limit,
             &today,
             &now_ts,
         );
@@ -77,6 +83,7 @@ fn process_file(
     file_key: &str,
     abs_path: &std::path::Path,
     read_result: ReadResult,
+    daily_limit: bool,
     today: &str,
     now_ts: &str,
 ) -> FileOutcome {
@@ -124,7 +131,7 @@ fn process_file(
     };
 
     // ---- change detection + daily gate (data-model.md) ---------------------
-    match decide_action(state.file(file_key), &sha256, today) {
+    match decide_action(state.file(file_key), &sha256, today, daily_limit) {
         Decision::Unchanged => return outcome(file_key, FileAction::Unchanged, None), // FR-010
         Decision::SkippedToday => {
             return outcome(file_key, FileAction::SkippedToday, None); // FR-011

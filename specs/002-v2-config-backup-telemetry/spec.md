@@ -7,8 +7,9 @@
 **Status**: Draft
 
 **Input**: User description: "define the features of v2". v2 stops uploading instrument log
-files. It (1) sends device/version telemetry and (2) keeps a daily backup of a per-product set
-of device configuration files — uploaded only when they change, at most once per day — to the
+files. It (1) sends device/version telemetry and (2) keeps a backup of a per-product set
+of device configuration files — uploaded only when they change; settings files at most once
+per day, the `PQDevice` files on every change — to the
 PicoQuant backend at `https://api.picoquant.com`. It runs on **Luminosa and Solira**
 instruments (Windows only), delivered to the existing fleet via the v1→v2 unattended upgrade.
 
@@ -23,7 +24,8 @@ public-share folder. Version 2 has a narrower purpose and an authenticated trans
   is submitted to the backend on a regular heartbeat so the fleet is observable centrally.
 - **Configuration backup** — a per-product set of device configuration files is submitted to
   a dedicated backup endpoint on the backend, but only when a file changed since its last
-  successful backup, and at most once per calendar day (UTC).
+  successful backup. Settings `*.xml` files are gated to at most once per calendar day (UTC);
+  `PQDevice.db` and `PQDevice.conf` are sent on every change (FR-011a).
 - **Two products, initially**: the same v2 service runs on **Luminosa** and **Solira**
   instruments. Each submission is tagged with the product bucket (`luminosa` or `solira`).
 - **Two release channels**: every build is `stable` or `beta`, compiled in. CI produces a
@@ -96,24 +98,31 @@ reporting.
 ### User Story 2 - Changed configuration files are backed up daily (Priority: P1)
 
 A fixed small set of device configuration files is watched. When one changes, its current
-contents are submitted to the backend's backup endpoint. Each file is backed up at most once
-per calendar day regardless of how many times it changes, and a file unchanged since its last
-successful backup is not re-sent.
+contents are submitted to the backend's backup endpoint. A file unchanged since its last
+successful backup is not re-sent. Most watched files are backed up at most once per calendar
+day regardless of how many times they change; the two `PQDevice` files (`PQDevice.db`,
+`PQDevice.conf`) are exempt from that gate and are backed up on **every** observed change
+(FR-011a).
 
 **Why this priority**: Configuration backup is the second core purpose of v2. Losing a
-device's configuration means an on-site rebuild; a daily off-device copy removes that risk.
+device's configuration means an on-site rebuild; an off-device copy removes that risk. The
+`PQDevice` files hold the live instrument state that changes during a working session, so
+each intermediate revision is worth keeping.
 
-**Independent Test**: Modify one watched file, run a cycle, confirm exactly one backup reaches
-the backend; modify it again the same day → no second upload; leave it unchanged next day → no
-upload; change it the following day → one upload.
+**Independent Test**: Modify a settings `*.xml` file, run a cycle, confirm exactly one backup
+reaches the backend; modify it again the same day → no second upload; change it the following
+day → one upload. Modify `PQDevice.conf` twice in one day → two uploads.
 
 **Acceptance Scenarios**:
 
 1. **Given** a watched file changed since its last successful backup, **When** a cycle runs and
    no backup of that file has succeeded today (UTC), **Then** the file's current contents are
    submitted to the backup endpoint and recorded as backed up for today.
-2. **Given** a watched file already backed up successfully today, **When** it changes again the
-   same day, **Then** no further upload occurs that day.
+2. **Given** a daily-limited watched file (a settings `*.xml`) already backed up successfully
+   today, **When** it changes again the same day, **Then** no further upload occurs that day.
+2a. **Given** `PQDevice.db` or `PQDevice.conf` already backed up successfully today, **When**
+   its content changes again the same day, **Then** the new content is uploaded that same
+   cycle (FR-011a).
 3. **Given** a watched file unchanged since its last successful backup, **When** a cycle runs,
    **Then** no upload occurs for that file.
 4. **Given** a watched file locked/open by the instrument software, **When** a cycle runs,
@@ -328,11 +337,14 @@ lowest risk.
 - **FR-010**: A watched file MUST be submitted only when its contents changed since its last
   successful backup, determined by content comparison (e.g. a content hash), not modification
   time alone.
-- **FR-011**: Each watched file MUST be backed up at most once per calendar day (UTC),
-  regardless of how many times it changes that day.
-- **FR-012**: A backup MUST be marked done for the day only after the backend confirms
-  success; a failed submission MUST be retried next cycle and MUST NOT consume the daily
-  allowance.
+- **FR-011**: Each daily-limited watched file MUST be backed up at most once per calendar day
+  (UTC), regardless of how many times it changes that day.
+- **FR-011a**: `PQDevice.db` and `PQDevice.conf` are exempt from the once-per-day gate: each
+  MUST be submitted on every cycle where its content changed since its last successful backup,
+  however many times that is per day. FR-010 (send only on content change) still applies.
+- **FR-012**: A daily-limited backup MUST be marked done for the day only after the backend
+  confirms success; a failed submission MUST be retried next cycle and MUST NOT consume the
+  daily allowance.
 - **FR-013**: If a watched file is locked, unreadable, or absent at cycle time, it MUST be
   skipped with a recorded reason and retried later; other files MUST still be processed.
 - **FR-014**: A watched file exceeding the backup endpoint's size limit MUST be skipped with a
@@ -423,10 +435,12 @@ lowest risk.
   UTC timestamp, and any blocked-backup conditions.
 - **Watched Configuration File**: one of the fixed set — logical name, canonical source
   location, current content fingerprint, last-successful-backup fingerprint, last-backed-up
-  UTC day.
+  UTC day, and whether it is subject to the once-per-day gate (`PQDevice.db` / `PQDevice.conf`
+  are not).
 - **Configuration Backup Submission**: the whole contents of one watched file at a point in
   time, plus logical file identifier, source path, file modification time, content hash, and
-  attribution (incl. product bucket). At most one per (file, UTC day).
+  attribution (incl. product bucket). At most one per (file, UTC day) for daily-limited files;
+  one per changed content for the `PQDevice` files.
 - **Local Backup State**: on-device record of, per watched file, its last successful backup
   fingerprint and UTC day — basis for change detection and the daily limit. Survives restarts,
   reboots, and v2 self-updates.
@@ -451,8 +465,10 @@ lowest risk.
 - **SC-002**: A maintainer can determine any reporting machine's current agent version, its
   installed instrument-software version (Luminosa / Solira), and last-seen time from backend
   queries within 1 business day, without contacting the customer.
-- **SC-003**: For a watched file that changes on a given UTC day, exactly one backup of that
-  file reaches the backend that day — not zero, not more.
+- **SC-003**: For a daily-limited watched file that changes on a given UTC day, exactly one
+  backup of that file reaches the backend that day — not zero, not more. For `PQDevice.db` /
+  `PQDevice.conf`, one backup reaches the backend per distinct content observed that day
+  (FR-011a).
 - **SC-004**: For a watched file that does not change, zero backup submissions occur.
 - **SC-005**: 100% of stored v2 submissions carry the correct product bucket, are attributable
   to a specific machine, and carry a client timestamp; ≥99% also carry a known instrument
@@ -529,6 +545,7 @@ lowest risk.
 - The v1→v2 upgrade mechanism itself (separate spec).
 - Inbound control of the agent: remote "back up now", remote reconfiguration, remote
   enable/disable.
-- Any sub-daily / real-time streaming of configuration changes.
+- Real-time / event-driven streaming of configuration changes. Change detection stays
+  cycle-driven; the `PQDevice` files (FR-011a) are still only checked once per cycle.
 - Migrating historical v1 uploads out of Nextcloud.
 - Per-machine credentials or credential provisioning.
