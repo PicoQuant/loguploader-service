@@ -1,0 +1,342 @@
+{
+  "doc.agent_version": {
+    "id": "doc.agent_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "The v2 agent build's own version, compiled in from the repo VERSION file at build time. Identifies which release produced this submission; unrelated to the instrument's own control-software version (see telemetry.instrument_control_version).",
+    "aliases": ["agent_version"],
+    "parent": null,
+    "examples": ["2.0.0", "2.0.0-beta.2"],
+    "confidence": "confirmed"
+  },
+  "doc.product": {
+    "id": "doc.product",
+    "datatype": "enum",
+    "unit": null,
+    "description": "The product bucket this build was compiled for (one build per product, FR-002b). Determines the watched-file set and which fleet token the binary carries. Only present in the heartbeat payload — the backup submission carries no product field of its own; its product is implied by the URL path.",
+    "aliases": ["product", "bucket"],
+    "parent": null,
+    "examples": ["luminosa", "solira"],
+    "confidence": "confirmed"
+  },
+  "doc.schema_version": {
+    "id": "doc.schema_version",
+    "datatype": "integer",
+    "unit": null,
+    "description": "On-disk format version of state.json itself (currently always 1). An unreadable file or a version other than 1 is treated as empty state (first-run semantics) rather than failing — this is a format tag for state.json, not a semantic version of the agent (see doc.agent_version).",
+    "aliases": ["schema_version"],
+    "parent": null,
+    "examples": [1],
+    "confidence": "confirmed"
+  },
+  "identity.machine_id": {
+    "id": "identity.machine_id",
+    "datatype": "string",
+    "unit": null,
+    "description": "Stable per-machine identifier: the Windows MachineGuid from HKLM\\SOFTWARE\\Microsoft\\Cryptography\\MachineGuid, or the all-zero GUID if the registry key is unreadable. Distinguishes machines of the same instrument serial (e.g. after a reinstall) and machines that share no other identity.",
+    "aliases": ["machine_id"],
+    "parent": null,
+    "examples": ["42db0590-1a2b-4c3d-8e9f-0a1b2c3d4e5f", "00000000-0000-0000-0000-000000000000"],
+    "confidence": "confirmed"
+  },
+  "identity.instrument_serial": {
+    "id": "identity.instrument_serial",
+    "datatype": "string",
+    "unit": null,
+    "description": "The Luminosa/Solira instrument's own serial number, read from <data_dir>\\Logs\\LastOpenSerial.txt (last whitespace-separated token). The literal string \"unknown\" when unreadable (see identity.serial_source) — never omitted, so every submission is still attributable to a machine even without it. Not to be confused with the powermeter product's system_serial concept in the sibling pm100 app's dictionary, which identifies a different instrument being measured, not the one running the agent.",
+    "aliases": ["instrument_serial"],
+    "parent": null,
+    "examples": ["SN-12345", "unknown"],
+    "confidence": "confirmed"
+  },
+  "identity.serial_source": {
+    "id": "identity.serial_source",
+    "datatype": "enum",
+    "unit": null,
+    "description": "Where identity.instrument_serial came from this cycle: \"file\" (successfully read from LastOpenSerial.txt) or \"unknown\" (missing/unreadable). Lets a maintainer distinguish a genuinely-unknown instrument from a read failure without inspecting the machine.",
+    "aliases": ["serial_source"],
+    "parent": null,
+    "examples": ["file", "unknown"],
+    "confidence": "confirmed"
+  },
+  "telemetry.measurement_type": {
+    "id": "telemetry.measurement_type",
+    "datatype": "enum",
+    "unit": null,
+    "description": "The generic PicoQuant telemetry endpoint's document-kind tag (shared backend machinery also used by other products, e.g. pm100's powermeter measurements use their own values of the same field). v2 heartbeats always send \"agent_status\"; the backup submission goes to a different endpoint entirely and has no measurement_type.",
+    "aliases": ["measurement_type"],
+    "parent": null,
+    "examples": ["agent_status"],
+    "confidence": "confirmed"
+  },
+  "telemetry.channel": {
+    "id": "telemetry.channel",
+    "datatype": "enum",
+    "unit": null,
+    "description": "The build's compiled-in release channel (stable/beta). Never switchable at runtime. Reported so a maintainer can identify the beta cohort and spec 001's promotion gate can be evaluated from telemetry alone.",
+    "aliases": ["channel"],
+    "parent": null,
+    "examples": ["stable", "beta"],
+    "confidence": "confirmed"
+  },
+  "telemetry.os": {
+    "id": "telemetry.os",
+    "datatype": "object",
+    "unit": null,
+    "description": "Parent concept grouping the three OS-identification fields of the machine the agent runs on.",
+    "aliases": ["os"],
+    "parent": null,
+    "examples": [{ "version": "10.0.19045", "build": "19045", "arch": "x86_64" }],
+    "confidence": "confirmed"
+  },
+  "telemetry.os_version": {
+    "id": "telemetry.os_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "Windows version string from GetVersionEx/RtlGetVersion.",
+    "aliases": ["os.version"],
+    "parent": "telemetry.os",
+    "examples": ["10.0.19045"],
+    "confidence": "confirmed"
+  },
+  "telemetry.os_build": {
+    "id": "telemetry.os_build",
+    "datatype": "string",
+    "unit": null,
+    "description": "Windows build number, as a string.",
+    "aliases": ["os.build"],
+    "parent": "telemetry.os",
+    "examples": ["19045", "26200"],
+    "confidence": "confirmed"
+  },
+  "telemetry.os_arch": {
+    "id": "telemetry.os_arch",
+    "datatype": "enum",
+    "unit": null,
+    "description": "CPU architecture of the machine (not necessarily of the agent binary, though in practice v2 only ships x86_64).",
+    "aliases": ["os.arch"],
+    "parent": "telemetry.os",
+    "examples": ["x86_64", "aarch64", "x86"],
+    "confidence": "confirmed"
+  },
+  "telemetry.instrument_software": {
+    "id": "telemetry.instrument_software",
+    "datatype": "object",
+    "unit": null,
+    "description": "Parent concept for the two independent, individually-nullable readings of the Luminosa/Solira control-software version (FR-004a). Distinct from doc.agent_version, which is the v2 agent's own version.",
+    "aliases": ["instrument_software"],
+    "parent": null,
+    "examples": [{ "version": "1.0.0.5415", "log_version": "1.0.0.2094" }],
+    "confidence": "confirmed"
+  },
+  "telemetry.instrument_control_version": {
+    "id": "telemetry.instrument_control_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "The version installed right now: the file-version resource of <install_dir>\\<Product>.exe. Null if unreadable. Answers \"what is installed\", as opposed to telemetry.instrument_log_version's \"what last actually ran\".",
+    "aliases": ["instrument_software.version"],
+    "parent": "telemetry.instrument_software",
+    "examples": ["1.0.0.5415", null],
+    "confidence": "confirmed"
+  },
+  "telemetry.instrument_log_version": {
+    "id": "telemetry.instrument_log_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "The version stamped in the 3rd ';'-delimited field of the header line of the newest *.pqlog under <data_dir>\\Logs\\ — the version that last actually ran (may lag telemetry.instrument_control_version after an install that hasn't been launched yet). Reading one header line is not log collection (FR-001 still holds; log contents are never sent). The exact header format is inferred from the current control-software build and not independently confirmed against a PicoQuant format spec.",
+    "aliases": ["instrument_software.log_version"],
+    "parent": "telemetry.instrument_software",
+    "examples": ["1.0.0.2094", null],
+    "confidence": "uncertain"
+  },
+  "telemetry.cycle_ok": {
+    "id": "telemetry.cycle_ok",
+    "datatype": "boolean",
+    "unit": null,
+    "description": "True if the cycle completed without an *internal* error. A per-file block (locked/absent/too-large) or a backend rejection is an expected outcome and does NOT make this false — only FailureCategory::Internal on the heartbeat or on any file does (FR-002f). Identical computed value in the heartbeat payload (payload.cycle.ok) and in state.json (last_cycle.ok) — the same concept surfaced live and persisted.",
+    "aliases": ["cycle.ok", "last_cycle.ok"],
+    "parent": null,
+    "examples": [true, false],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_duration_ms": {
+    "id": "telemetry.cycle_duration_ms",
+    "datatype": "integer",
+    "unit": "milliseconds",
+    "description": "Wall-clock duration of the cycle that produced this heartbeat (backup pass + heartbeat pass).",
+    "aliases": ["cycle.duration_ms"],
+    "parent": null,
+    "examples": [812],
+    "confidence": "confirmed"
+  },
+  "telemetry.last_failure_category": {
+    "id": "telemetry.last_failure_category",
+    "datatype": "enum",
+    "unit": null,
+    "description": "The most recent *backup-submission* failure category recorded during this cycle's backup pass (ctx.last_failure_category), or null if none. This is NOT the heartbeat POST's own outcome — a heartbeat cannot report its own delivery failure inside itself, so this field only ever reflects a backup-pass failure from earlier in the same cycle.",
+    "aliases": ["last_failure_category"],
+    "parent": null,
+    "examples": ["file_locked", "rejected_bad_request", null],
+    "confidence": "confirmed"
+  },
+  "telemetry.heartbeat_ok": {
+    "id": "telemetry.heartbeat_ok",
+    "datatype": "boolean",
+    "unit": null,
+    "description": "Whether specifically the heartbeat POST of the most recent cycle succeeded — distinct from telemetry.cycle_ok, which is about internal errors across the whole cycle including the backup pass. Persisted only in state.json (last_cycle.heartbeat_ok); a heartbeat obviously cannot report its own success/failure inside its own body.",
+    "aliases": ["last_cycle.heartbeat_ok"],
+    "parent": null,
+    "examples": [true, false],
+    "confidence": "confirmed"
+  },
+  "telemetry.blocked_backup": {
+    "id": "telemetry.blocked_backup",
+    "datatype": "object",
+    "unit": null,
+    "description": "Parent concept for one entry of the heartbeat's blocked_backups list: a watched file that could not be backed up this cycle (FR-007).",
+    "aliases": ["blocked_backups[]"],
+    "parent": null,
+    "examples": [{ "file_key": "pqdevice_db", "reason": "locked" }],
+    "confidence": "confirmed"
+  },
+  "telemetry.blocked_backup_reason": {
+    "id": "telemetry.blocked_backup_reason",
+    "datatype": "enum",
+    "unit": null,
+    "description": "Why a watched file was blocked this cycle: \"locked\" (sharing violation), \"absent\" (file missing), \"too_large\" (over backup_max_bytes), or \"rejected\" (backend returned 422/400, FailureCategory::RejectedBadRequest). A narrower, file-outcome-only enum than telemetry.last_failure_category / FailureCategory — it has no authentication/backend_error/internal/no_network values, since only backup-pass per-file outcomes are surfaced here.",
+    "aliases": ["blocked_backups[].reason"],
+    "parent": "telemetry.blocked_backup",
+    "examples": ["locked", "absent", "too_large", "rejected"],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_counts": {
+    "id": "telemetry.cycle_counts",
+    "datatype": "object",
+    "unit": null,
+    "description": "Parent concept for the per-outcome file counts of the most recent cycle, persisted in state.json for support/diagnostics.",
+    "aliases": ["last_cycle.counts"],
+    "parent": null,
+    "examples": [{ "sent": 1, "unchanged": 5, "blocked": 0, "retry_later": 0 }],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_count_sent": {
+    "id": "telemetry.cycle_count_sent",
+    "datatype": "integer",
+    "unit": null,
+    "description": "Count of watched files whose action this cycle was Sent or Deduplicated (both count as a successful send, D-model FileAction).",
+    "aliases": ["last_cycle.counts.sent"],
+    "parent": "telemetry.cycle_counts",
+    "examples": [1],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_count_unchanged": {
+    "id": "telemetry.cycle_count_unchanged",
+    "datatype": "integer",
+    "unit": null,
+    "description": "Count of watched files whose action this cycle was Unchanged or SkippedToday.",
+    "aliases": ["last_cycle.counts.unchanged"],
+    "parent": "telemetry.cycle_counts",
+    "examples": [5],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_count_blocked": {
+    "id": "telemetry.cycle_count_blocked",
+    "datatype": "integer",
+    "unit": null,
+    "description": "Count of watched files whose action this cycle was Blocked (see telemetry.blocked_backup_reason).",
+    "aliases": ["last_cycle.counts.blocked"],
+    "parent": "telemetry.cycle_counts",
+    "examples": [0],
+    "confidence": "confirmed"
+  },
+  "telemetry.cycle_count_retry_later": {
+    "id": "telemetry.cycle_count_retry_later",
+    "datatype": "integer",
+    "unit": null,
+    "description": "Count of watched files whose action this cycle was RetryLater (a transient failure — no state change, retried next cycle).",
+    "aliases": ["last_cycle.counts.retry_later"],
+    "parent": "telemetry.cycle_counts",
+    "examples": [0],
+    "confidence": "confirmed"
+  },
+  "backup.file_key": {
+    "id": "backup.file_key",
+    "datatype": "string",
+    "unit": null,
+    "description": "Logical identifier of one watched configuration file, from the per-product WatchedFileSpec table (e.g. \"pqdevice_db\", \"settings/DeviceConfig.xml\"). Appears as a submitted field on the backup submission, as the map key of state.json's `files` object (the key itself carries this meaning, not a nested field), and inside a heartbeat's blocked_backups entries.",
+    "aliases": ["file_key", "files.<key>"],
+    "parent": null,
+    "examples": ["pqdevice_db", "pqdevice_conf", "settings/DeviceConfig.xml", "usersettings/User.xml"],
+    "confidence": "confirmed"
+  },
+  "backup.content_hash": {
+    "id": "backup.content_hash",
+    "datatype": "string",
+    "unit": null,
+    "description": "SHA-256 of a watched file's whole contents at the point it was read this cycle. Doubles as the wire integrity field the backend verifies/dedupes on (content_sha256) and as the on-device change-detection baseline (state.json's last_backup_sha256) — the same digest value in both places once a backup succeeds.",
+    "aliases": ["content_sha256", "last_backup_sha256"],
+    "parent": null,
+    "examples": ["643f2a9e8b1c...(64 hex chars)"],
+    "confidence": "confirmed"
+  },
+  "backup.gate_day": {
+    "id": "backup.gate_day",
+    "datatype": "date",
+    "unit": null,
+    "description": "The UTC calendar day (YYYY-MM-DD) a watched file was last successfully backed up — the once-per-day gate's key (FR-011), evaluated in UTC regardless of machine local time. This is a DATE used to decide whether today's change may be sent, not a timestamp of when anything happened (that's time.cycle_started_utc) — a common misreading (FR-039). The same value is persisted per-file in state.json and surfaced read-only, per-file, in the heartbeat's last_backup_days map as a freshness hint.",
+    "aliases": ["last_backup_utc_day", "last_backup_days.<file_key>"],
+    "parent": null,
+    "examples": ["2026-09-08"],
+    "confidence": "confirmed"
+  },
+  "backup.source_path": {
+    "id": "backup.source_path",
+    "datatype": "string",
+    "unit": null,
+    "description": "Absolute on-disk path the file's contents were read from this cycle (the real path/extension — v2 does not stage or rename files before sending, unlike v1's copy-to-.xml behavior).",
+    "aliases": ["source_path"],
+    "parent": null,
+    "examples": ["C:\\Program Files\\PicoQuant\\Luminosa\\PQDevice.conf"],
+    "confidence": "confirmed"
+  },
+  "backup.file_mtime": {
+    "id": "backup.file_mtime",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "The watched file's own filesystem modification time at read time (optional — omitted if unavailable). Informational only; change detection uses backup.content_hash, never mtime alone (FR-010).",
+    "aliases": ["file_mtime"],
+    "parent": null,
+    "examples": ["2026-09-08T07:55:00Z", null],
+    "confidence": "confirmed"
+  },
+  "backup.content": {
+    "id": "backup.content",
+    "datatype": "binary",
+    "unit": "bytes",
+    "description": "The whole, self-consistent contents of one watched file at the point it was read this cycle (FR-015) — the multipart file part named \"content\". Never partial/torn; a file that changes mid-read is retried rather than sent inconsistent.",
+    "aliases": ["content"],
+    "parent": null,
+    "examples": ["<raw file bytes>"],
+    "confidence": "confirmed"
+  },
+  "time.cycle_started_utc": {
+    "id": "time.cycle_started_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "The UTC instant this cycle began (captured once at cycle start, before any file reads or HTTP calls). Confirmed identical across every place it appears: the heartbeat envelope's measured_at, the heartbeat payload's cycle.started_utc, a backup submission's client_timestamp, a state.json file entry's last_success_utc, and state.json's last_cycle.started_utc all derive from the same captured value for a given cycle — not four different clocks, one clock read once.",
+    "aliases": ["measured_at", "cycle.started_utc", "client_timestamp", "last_success_utc", "last_cycle.started_utc"],
+    "parent": null,
+    "examples": ["2026-09-08T08:17:10Z"],
+    "confidence": "confirmed"
+  },
+  "time.cycle_finished_utc": {
+    "id": "time.cycle_finished_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "The UTC instant the most recent cycle whose heartbeat POST succeeded finished (captured after the heartbeat pass, not at cycle start — deliberately distinct from time.cycle_started_utc). Persisted only in state.json's last_heartbeat_utc; not sent to the backend.",
+    "aliases": ["last_heartbeat_utc"],
+    "parent": null,
+    "examples": ["2026-09-08T08:17:11Z", null],
+    "confidence": "confirmed"
+  }
+}

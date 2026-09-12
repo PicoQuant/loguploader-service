@@ -30,6 +30,14 @@ jobs:
           fi
           echo "no committed token found"
 
+      # FR-036–FR-040 / SC-013: every field v2 submits or persists must resolve to a
+      # documented semantic concept. Pure stdlib Python — runs on this ubuntu runner
+      # without needing the Windows/Rust toolchain below.
+      - name: Semantic data dictionary coverage
+        run: |
+          python3 -m unittest tools.test_check_data_dictionary -v
+          python3 tools/check_data_dictionary.py
+
   build:
     needs: no-secret-in-source
     runs-on: windows-latest

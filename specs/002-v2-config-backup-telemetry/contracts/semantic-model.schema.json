@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/v2agent/semantic-model.json",
+  "title": "v2 agent semantic data dictionary — semantic-model.json",
+  "description": "Format of contracts/data-dictionary/semantic-model.json: a flat map of dot-namespaced concept id -> concept entry (FR-036, FR-037, D15). Structural sibling: heartbeat-payload.schema.json / local-state.schema.json describe document SHAPE; this describes concept MEANING.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/concept"
+  },
+  "propertyNames": {
+    "pattern": "^(identity|telemetry|backup|time|config|doc)\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+  },
+  "$defs": {
+    "concept": {
+      "type": "object",
+      "required": ["id", "datatype", "description", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "same dot-namespaced id as the property key; kept explicit for grep/diff friendliness"
+        },
+        "datatype": {
+          "type": "string",
+          "enum": ["string", "enum", "integer", "boolean", "object", "iso8601-datetime", "date", "binary"]
+        },
+        "unit": {
+          "type": ["string", "null"],
+          "description": "e.g. milliseconds, bytes; null where the value is not a measured quantity"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "what the concept MEANS, not what shape it has"
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "other field names this same concept appears under across documents"
+        },
+        "parent": {
+          "type": ["string", "null"],
+          "description": "enclosing concept id for a nested field, e.g. telemetry.os.arch -> telemetry.os"
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "description": "at least one real or realistic example value"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["confirmed", "uncertain"],
+          "description": "uncertain unless checked against specs/003-backend-api-support or working code (FR-037)"
+        }
+      }
+    }
+  }
+}

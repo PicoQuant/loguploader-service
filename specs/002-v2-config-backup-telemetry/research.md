@@ -176,6 +176,55 @@ a technical unknown — tracked in `plan.md` Complexity Tracking + Next Actions.
 - **Alternatives**: channel in `config.toml` (editable / can be lost); backend-assigned
   cohort (needs backend work, softens "device→backend only"). Rejected per the user's call.
 
+## D15. Semantic data dictionary — hand-authored, schema-validated coverage
+
+- **Decision**: the FR-036–FR-040 semantic dictionary lives at
+  `contracts/data-dictionary/` as three hand-authored files, mirroring `pm100`'s
+  `docs/data-dictionary/` exactly:
+  - `README.md` — how the pieces fit, plus the FR-039 "same name, different concept" table.
+  - `semantic-model.json` — a flat map of dot-namespaced concept id → `{ datatype, unit,
+    description, aliases, parent, examples, confidence }`. Namespaces: `identity.*`
+    (machine id, instrument serial), `telemetry.*` (channel, cycle health, failure
+    categories), `backup.*` (file key, content hash, daily-limit gate), `time.*`
+    (client vs. receipt vs. gate-day timestamps — the FR-039 collision), `config.*`
+    (build/runtime config), `doc.*` (envelope-level fields shared by every submission —
+    `product`, `agent_version`).
+  - `field-mappings.json` — a `schema_registry` keyed by a document id
+    (`v2.heartbeat_payload.v1`, `v2.backup_submission.v1`, `v2.local_state.v1`) → map of
+    JSON pointer → semantic id. The backup submission is `multipart/form-data`, not JSON,
+    so its "pointers" are just its part names (`/instrument_serial`, `/content_sha256`, …)
+    treated as a flat one-level document, same convention pm100 uses for its non-JSON parts.
+  - Structural JSON Schemas for the *format* of a `semantic-model.json` entry and of a
+    `field-mappings.json` registry go in `contracts/semantic-model.schema.json` and
+    `contracts/field-mappings.schema.json` (Phase 1 output) — these validate the dictionary's
+    own shape, distinct from `heartbeat-payload.schema.json` / `local-state.schema.json`,
+    which validate the documents the dictionary describes.
+- **Rationale**: pm100's dictionary is deliberately code-independent, hand-curated prose +
+  data, not generated — semantic meaning ("this is the gate-day key, not a timestamp") isn't
+  reliably derivable from field names or types alone, and forcing generation would just
+  produce confident-sounding `description` strings with no real `confidence: "uncertain"`
+  signal. Keeping the three files matches a pattern already proven to work for a sibling
+  PicoQuant app and keeps `field-mappings.json` trivially diffable in review.
+- **Coverage enforcement (SC-013 — 0 unmapped fields)**: a small script,
+  `tools/check_data_dictionary.py` (same tools/ location as `fleet_backup_pull.py`), walks
+  every leaf JSON pointer in `heartbeat-payload.schema.json` and `local-state.schema.json`
+  plus the fixed backup-submission part list from `contracts/backend-api.md`, and fails if
+  any pointer is absent from `field-mappings.json` or maps to an id missing from
+  `semantic-model.json`. Run in CI alongside `cargo test`; not a Rust dependency (Principle
+  V) — it only reads the schema/dictionary JSON already checked into the repo.
+- **Sync discipline (FR-040)**: the script only catches *missing* mappings, not *stale*
+  descriptions of a field whose meaning changed — that half stays a human review step
+  whenever `data-model.md` or a schema file changes, called out explicitly in the PR
+  checklist rather than automated.
+- **Alternatives considered**:
+  - *Generate the dictionary from Rust doc-comments / serde derive attributes* — would drift
+    less from the code, but collapses "shape" and "meaning" back into one source, which is
+    exactly what FR-036 says not to do (a doc-comment describes a struct field, not whether
+    two same-named fields across documents are the same concept).
+  - *Skip the meta-schemas, freeform JSON* — cheaper, but then a malformed entry (missing
+    `confidence`, wrong nesting) only surfaces when a human reads it; the meta-schema catches
+    it the same cycle the dictionary is edited.
+
 ## D13. Testing approach
 
 - **Unit** (`cargo test`, no network): change detection (D8), once-per-UTC-day gate incl.
@@ -187,3 +236,5 @@ a technical unknown — tracked in `plan.md` Complexity Tracking + Next Actions.
 - **Manual E2E** (`quickstart.md`): `once` subcommand against the real `api.picoquant.com`
   with a test token from `.env`, then verify via admin queries — the flow already proven by
   this repo's `test_submission.sh`.
+- **Data dictionary coverage** (D15): `tools/check_data_dictionary.py`, run in CI, not
+  `cargo test` (it validates docs/JSON, not Rust behaviour).

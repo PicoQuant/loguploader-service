@@ -94,6 +94,20 @@ midnight boundary, `401 / 413 / 422 / 5xx / connection-refused` categorisation a
 daily-allowance-not-consumed-on-failure, `state.json` corruption recovery, multipart format,
 product/path resolution.
 
+## 4a. Semantic data dictionary coverage (FR-036–FR-040, SC-013)
+
+```
+python3 tools/check_data_dictionary.py
+```
+
+Expected: exits 0. It walks every leaf pointer of `contracts/heartbeat-payload.schema.json`
+and `contracts/local-state.schema.json`, plus the fixed backup-submission part list from
+`contracts/backend-api.md`, and fails naming any pointer missing from
+`contracts/data-dictionary/field-mappings.json` or mapped to an id absent from
+`contracts/data-dictionary/semantic-model.json`. Take an unpicked field from the response body
+of step 3 (e.g. `payload.instrument_software.log_version`) and confirm you can hand-trace it:
+schema → `field-mappings.json` → `semantic-model.json` → a plain-English description.
+
 ## 5. Install as a service (on a test machine)
 
 ```
@@ -130,5 +144,6 @@ remove `old` from the backend and confirm a binary still carrying only `old` now
   byte-exact backup round trip.
 - Re-running `once` sends nothing when nothing changed.
 - `cargo test` passes.
+- `tools/check_data_dictionary.py` passes (0 unmapped fields, SC-013).
 - The token value does not appear anywhere in the git tree.
 - Step 5 (manual): the service survives a reboot with no logon.

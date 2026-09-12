@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/v2agent/field-mappings.json",
+  "title": "v2 agent semantic data dictionary — field-mappings.json",
+  "description": "Format of contracts/data-dictionary/field-mappings.json: a schema_registry mapping each v2 document's JSON pointers (or, for the multipart backup submission, its flat part names) to a semantic-model.json concept id (FR-038, D15).",
+  "type": "object",
+  "required": ["schema_registry"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_registry": {
+      "type": "object",
+      "description": "document/schema id -> map of pointer -> semantic id",
+      "propertyNames": {
+        "pattern": "^v2\\.[a-z0-9_]+\\.v[0-9]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "JSON pointer (RFC 6901), or a flat /part_name for the multipart backup submission, mapped to a semantic-model.json concept id",
+        "propertyNames": {
+          "pattern": "^(/[A-Za-z0-9_.\\*-]+)+$"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "pattern": "^(identity|telemetry|backup|time|config|doc)\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+          "description": "must resolve to a key present in semantic-model.json — enforced by tools/check_data_dictionary.py, not by this schema alone"
+        }
+      }
+    }
+  }
+}

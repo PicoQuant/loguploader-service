@@ -165,3 +165,56 @@ gate).
 Retryable next cycle: `NoNetwork`, `Auth`, `BackendError`, `FileLocked`.
 Not retried blindly (surfaced, wait for change / new build): `RejectedBadRequest`, `TooLarge`,
 `FileAbsent`. (FR-006, FR-012, FR-014, FR-026, FR-027)
+
+## Semantic Data Dictionary (`contracts/data-dictionary/`)
+
+Meaning-layer companion to the structural schemas above (FR-036–FR-040, D15). Three files,
+on the `pm100/docs/data-dictionary` pattern:
+
+### `semantic-model.json`
+
+Flat map, concept id → entry:
+
+| Entry field | Type | Notes |
+|---|---|---|
+| `id` | string | dot-namespaced, e.g. `identity.instrument_serial`, `time.gate_day` |
+| `datatype` | string | `string` \| `enum` \| `integer` \| `boolean` \| `object` \| `iso8601-datetime` \| `date` |
+| `unit` | string \| null | e.g. `milliseconds`, `bytes`; null where not a measured quantity |
+| `description` | string | one or two sentences, meaning not shape |
+| `aliases` | array of string | other field names this concept appears under across documents |
+| `parent` | string \| null | enclosing concept id for nested fields (e.g. `telemetry.os.*` → `telemetry.os`) |
+| `examples` | array | at least one real (or realistic) value |
+| `confidence` | enum `confirmed` \| `uncertain` | `uncertain` per FR-037 unless checked against `specs/003-backend-api-support` or code |
+
+**Namespaces** (FR-037): `identity.*`, `telemetry.*`, `backup.*`, `time.*`, `config.*`,
+`doc.*` (envelope-level fields shared by every submission: `product`, `agent_version`).
+
+Format validated by `contracts/semantic-model.schema.json`.
+
+### `field-mappings.json`
+
+```json
+{
+  "schema_registry": {
+    "v2.heartbeat_payload.v1": { "/instrument_serial": "identity.instrument_serial", "...": "..." },
+    "v2.backup_submission.v1": { "/file_key": "backup.file_key", "...": "..." },
+    "v2.local_state.v1": { "/files/*/last_backup_sha256": "backup.content_hash", "...": "..." }
+  }
+}
+```
+
+- Keys under each document id are JSON pointers into that document (or, for the
+  multipart `v2.backup_submission.v1`, its flat part names) → a `semantic-model.json` id.
+- `*` in a pointer denotes "any key at this position" (used for `state.json`'s `files` map,
+  keyed by `file_key`).
+- Every leaf pointer of `heartbeat-payload.schema.json`, `local-state.schema.json`, and the
+  backup-submission part list in `contracts/backend-api.md` MUST appear here (SC-013),
+  enforced by `tools/check_data_dictionary.py` (D15).
+
+Format validated by `contracts/field-mappings.schema.json`.
+
+### `README.md`
+
+Explains the two files above, how to navigate from a schema file back to the dictionary, and
+carries the FR-039 "same name, different concept" table (`serial`, `version`, `*_utc` /
+`*_timestamp`) plus any other collision found while authoring.

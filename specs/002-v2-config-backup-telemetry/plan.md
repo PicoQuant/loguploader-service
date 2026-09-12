@@ -23,6 +23,12 @@ Technical approach: a single self-contained **Rust** binary (`x86_64-pc-windows-
 runtime on the target, minimal crates, `windows-service` for SCM integration, blocking HTTP
 (`ureq` + rustls), local state in a JSON file under `C:\ProgramData`.
 
+Every document the agent submits or persists is also documented at the **meaning** level, not
+just structurally: a hand-authored semantic data dictionary (`contracts/data-dictionary/`),
+on the pattern of the sibling `pm100` app's `docs/data-dictionary/`, sits alongside the
+existing structural JSON Schemas and is checked for full field coverage in CI (FR-036–FR-040,
+D15).
+
 ## Technical Context
 
 **Language/Version**: Rust (stable, edition 2021, MSRV pinned in `Cargo.toml`, currently 1.74+).
@@ -103,8 +109,14 @@ No violations. Confirmations:
   only place the token/version/channel enter, from CI.
 - **III** — the design reads watched files only; `ResolvedWatchedFile` has no delete path.
 - **IV** — `CycleRecord` → Event Log + `cycles.log`; `blocked_backups` surfaces conditions in
-  the heartbeat.
+  the heartbeat; the FR-036–FR-040 semantic dictionary extends "observable" from *that a
+  submission happened* to *what each field in it means* — a maintainer reading a raw
+  heartbeat or `state.json` off a support ticket doesn't have to re-derive meaning from
+  source (D15).
 - **V** — Rust binary; small justified dependency set (`research.md`).
+  `tools/check_data_dictionary.py` (D15) is Python, matching the existing `tools/` scripts
+  (e.g. `fleet_backup_pull.py`) — it is a CI-only doc-coverage check, never linked into the
+  agent binary, so it does not add a runtime dependency.
 - **VI** — `state.json` under `%ProgramData%` (not the install dir); CLI `install/uninstall`
   matches v1's verbs; per-product **and per-channel** artifacts; channel in every heartbeat
   for the promotion gate.
@@ -123,7 +135,13 @@ specs/002-v2-config-backup-telemetry/
 │   ├── cli.md
 │   ├── backend-api.md
 │   ├── heartbeat-payload.schema.json
-│   └── local-state.schema.json
+│   ├── local-state.schema.json
+│   ├── semantic-model.schema.json    # format of data-dictionary/semantic-model.json (FR-036-040)
+│   ├── field-mappings.schema.json    # format of data-dictionary/field-mappings.json
+│   └── data-dictionary/              # authored content — /speckit-tasks + implementation
+│       ├── README.md
+│       ├── semantic-model.json
+│       └── field-mappings.json
 └── tasks.md             # /speckit-tasks output
 ```
 
@@ -159,11 +177,16 @@ tests/
 ├── state_persistence.rs
 └── api_contract.rs            # against mockito
 
+tools/
+└── check_data_dictionary.py   # CI check: every schema leaf pointer resolves via field-mappings.json
+                               #   to a semantic-model.json id (SC-013, D15) — not a Rust dep
+
 installer/
 └── v2/                        # per-product Inno Setup scripts (owned jointly with spec 001)
 
 .github/workflows/
 ├── windows-build.yml          # rewritten: matrix [luminosa,solira] x [stable,beta], cargo build, per-product token secret
+│                              #   + runs tools/check_data_dictionary.py (platform-independent, any runner)
 └── release.yml                # rewritten: same matrix; beta tag (vX.Y.Z-beta.N) -> prerelease; stable tag -> release;
                                #   publishes installer + .sha256 + exe per (product,channel) with v1-compatible names
 ```

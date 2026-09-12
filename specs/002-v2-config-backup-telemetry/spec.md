@@ -428,6 +428,41 @@ lowest risk.
   connections or poll for commands. Remote "back up now" or remote reconfiguration, if wanted
   later, is a separate feature.
 
+#### Data documentation
+
+- **FR-036**: The structural JSON Schemas for every document v2 produces or consumes
+  (`heartbeat-payload.schema.json`, `local-state.schema.json`, and the JSON-shaped parts of
+  the backup submission) MUST be paired with a **semantic data dictionary**, on the pattern
+  of the sibling `pm100` app's `docs/data-dictionary/` (`README.md`, `semantic-model.json`,
+  `field-mappings.json`). Structural schemas say *shape*; the dictionary says *meaning* —
+  neither substitutes for the other.
+- **FR-037**: The semantic dictionary MUST define, for each field across the Heartbeat
+  Telemetry Record, the Configuration Backup Submission, and Local Backup State: a
+  dot-namespaced semantic id (e.g. `identity.*`, `telemetry.*`, `backup.*`, `time.*`,
+  `config.*`) independent of the field's own name, its datatype, unit where applicable,
+  a description, known aliases, its parent concept where nested, at least one real example,
+  and a `confidence` marker (`confirmed` / `uncertain`) — `uncertain` for anything inferred
+  from field names or a single source rather than confirmed against `specs/003-backend-api-support`
+  or working code.
+- **FR-038**: The dictionary MUST include a `field-mappings.json` mapping each document's
+  JSON pointers to the semantic ids of FR-037, keyed by a document/schema identifier
+  (mirroring pm100's `schema_registry`), so a concrete field in `state.json` or a wire
+  payload can be looked up back to its meaning without re-deriving it from source.
+- **FR-039**: The dictionary MUST call out cross-document "same name, different concept"
+  collisions the way pm100's dictionary does — at minimum: `serial` (`instrument_serial`
+  read from `LastOpenSerial.txt` vs. the `system.serial_number` concept some backend
+  consumers already associate with other products' telemetry), `version` (`agent_version`
+  of v2 itself vs. `instrument_software.version` of the Luminosa/Solira control software vs.
+  `instrument_software.log_version` read from the newest `.pqlog` header — three different
+  versions that FR-004a already treats as independent, nullable fields), and `*_utc` /
+  `*_timestamp` naming (`measured_at` = cycle-start client time vs. `received_at` = backend
+  receipt time vs. `last_backup_utc_day` = the once-per-day gate key, not a timestamp).
+- **FR-040**: The dictionary lives under version control alongside the schemas it describes
+  (e.g. `specs/002-v2-config-backup-telemetry/contracts/data-dictionary/`) and MUST be kept
+  in sync with `contracts/backend-api.md`, `data-model.md`, and the schema files whenever a
+  submitted field is added, renamed, or reinterpreted — a schema/data-model change without a
+  matching dictionary update is an incomplete change, not a follow-up.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Heartbeat Telemetry Record**: a device status/version report submitted every interval —
@@ -455,6 +490,12 @@ lowest risk.
 - **Fleet Token**: a product's `X-TELEMETRY-TOKEN`, identical on every machine of that
   product, non-expiring, injected at build from a secret, rotatable via the accept-two-values
   transition.
+- **Semantic Data Dictionary**: the meaning-layer companion to the structural JSON Schemas —
+  a `semantic-model.json` of dot-namespaced concepts (id, datatype, unit, description,
+  aliases, parent concept, examples, confidence) and a `field-mappings.json` resolving each
+  document's JSON pointers to those concepts, on the `pm100/docs/data-dictionary` pattern
+  (FR-036–FR-040). Documents it must cover: the Heartbeat Telemetry Record, the Configuration
+  Backup Submission, and Local Backup State.
 
 ## Success Criteria *(mandatory)*
 
@@ -492,6 +533,9 @@ lowest risk.
 - **SC-011**: Instrument operational log files uploaded by v2: 0.
 - **SC-012**: A locked, oversized, or rejected watched file never blocks the backup of the
   other watched files and is visible centrally (in the heartbeat) within one interval.
+- **SC-013**: Every field in every wire/persisted document listed under FR-037 (Heartbeat
+  Telemetry Record, Configuration Backup Submission, Local Backup State) resolves, via
+  `field-mappings.json`, to a semantic id in `semantic-model.json` — 0 unmapped fields.
 
 ## Assumptions
 
@@ -529,6 +573,9 @@ lowest risk.
 - Windows service hosting and a per-machine writable location for local backup state and cycle
   records that survives reboots and v2 self-updates.
 - OS machine identifier and the per-product instrument serial source.
+- The `pm100` app's `docs/data-dictionary/` (README, `semantic-model.json`,
+  `field-mappings.json`) as the reference pattern the FR-036–FR-040 dictionary follows —
+  no code dependency, just the structure to mirror.
 
 ## Open Items
 

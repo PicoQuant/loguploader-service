@@ -1,0 +1,52 @@
+{
+  "schema_registry": {
+    "v2.heartbeat_payload.v1": {
+      "/measurement_type": "telemetry.measurement_type",
+      "/measured_at": "time.cycle_started_utc",
+      "/instrument_serial": "identity.instrument_serial",
+      "/payload/machine_id": "identity.machine_id",
+      "/payload/agent_version": "doc.agent_version",
+      "/payload/product": "doc.product",
+      "/payload/channel": "telemetry.channel",
+      "/payload/serial_source": "identity.serial_source",
+      "/payload/os/version": "telemetry.os_version",
+      "/payload/os/build": "telemetry.os_build",
+      "/payload/os/arch": "telemetry.os_arch",
+      "/payload/instrument_software/version": "telemetry.instrument_control_version",
+      "/payload/instrument_software/log_version": "telemetry.instrument_log_version",
+      "/payload/cycle/started_utc": "time.cycle_started_utc",
+      "/payload/cycle/duration_ms": "telemetry.cycle_duration_ms",
+      "/payload/cycle/ok": "telemetry.cycle_ok",
+      "/payload/last_failure_category": "telemetry.last_failure_category",
+      "/payload/blocked_backups/*/file_key": "backup.file_key",
+      "/payload/blocked_backups/*/reason": "telemetry.blocked_backup_reason",
+      "/payload/last_backup_days/*": "backup.gate_day"
+    },
+    "v2.backup_submission.v1": {
+      "/content": "backup.content",
+      "/instrument_serial": "identity.instrument_serial",
+      "/machine_id": "identity.machine_id",
+      "/file_key": "backup.file_key",
+      "/source_path": "backup.source_path",
+      "/content_sha256": "backup.content_hash",
+      "/file_mtime": "backup.file_mtime",
+      "/agent_version": "doc.agent_version",
+      "/client_timestamp": "time.cycle_started_utc"
+    },
+    "v2.local_state.v1": {
+      "/schema_version": "doc.schema_version",
+      "/files/*": "backup.file_key",
+      "/files/*/last_backup_sha256": "backup.content_hash",
+      "/files/*/last_backup_utc_day": "backup.gate_day",
+      "/files/*/last_success_utc": "time.cycle_started_utc",
+      "/last_heartbeat_utc": "time.cycle_finished_utc",
+      "/last_cycle/started_utc": "time.cycle_started_utc",
+      "/last_cycle/ok": "telemetry.cycle_ok",
+      "/last_cycle/heartbeat_ok": "telemetry.heartbeat_ok",
+      "/last_cycle/counts/sent": "telemetry.cycle_count_sent",
+      "/last_cycle/counts/unchanged": "telemetry.cycle_count_unchanged",
+      "/last_cycle/counts/blocked": "telemetry.cycle_count_blocked",
+      "/last_cycle/counts/retry_later": "telemetry.cycle_count_retry_later"
+    }
+  }
+}

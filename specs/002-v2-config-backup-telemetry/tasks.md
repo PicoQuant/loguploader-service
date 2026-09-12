@@ -195,12 +195,92 @@ red-first ordering but should be written alongside or before the code they cover
 
 ---
 
+## Phase 10: Semantic data dictionary (FR-036–FR-040, added 2026-09-12)
+
+**Goal**: every field in the heartbeat payload, backup submission, and `state.json` resolves
+to a documented semantic concept, on the `pm100/docs/data-dictionary` pattern
+(`plan.md`/`research.md` D15, `data-model.md` → "Semantic Data Dictionary").
+
+**Independent Test**: `python3 tools/check_data_dictionary.py` exits 0; deleting one mapping
+from `field-mappings.json` makes it exit non-zero naming that pointer (SC-013).
+
+- [X] T052 [P] Create `contracts/data-dictionary/semantic-model.json`, conforming to
+  `contracts/semantic-model.schema.json`: one concept entry per distinct field meaning across
+  `contracts/heartbeat-payload.schema.json`, `contracts/local-state.schema.json`, and the 9
+  backup-submission parts in `contracts/backend-api.md` §2, namespaced `identity.*` /
+  `telemetry.*` / `backup.*` / `time.*` / `config.*` / `doc.*` per `data-model.md`. Mark
+  `confidence: "uncertain"` for anything not directly confirmed in
+  `specs/003-backend-api-support/backend-changes.md` or working code (e.g. the exact
+  `instrument_software.log_version` `.pqlog`-header semantics, FR-004a). Done: 34 concepts
+  across `identity.*`/`telemetry.*`/`backup.*`/`time.*`/`doc.*` (no `config.*` entry needed —
+  none of the three documents' leaf fields turned out to be build/runtime config); each
+  cross-checked against `src/telemetry.rs`/`src/backup.rs`/`src/cycle.rs`/`src/state.rs` (e.g.
+  confirmed `measured_at` == `payload.cycle.started_utc` == a backup's `client_timestamp` ==
+  `last_success_utc` are one captured value, not four; confirmed `last_heartbeat_utc` is cycle
+  *finish* time, a distinct concept). Only `telemetry.instrument_log_version` marked
+  `uncertain`.
+- [X] T053 [P] Create `contracts/data-dictionary/field-mappings.json`, conforming to
+  `contracts/field-mappings.schema.json`: `schema_registry` entries `v2.heartbeat_payload.v1`
+  (every leaf pointer of `heartbeat-payload.schema.json`), `v2.backup_submission.v1` (the 9
+  multipart part names from `contracts/backend-api.md` §2 as flat `/part_name` pointers), and
+  `v2.local_state.v1` (every leaf pointer of `local-state.schema.json`, using `/files/*/...`
+  for the per-file map) — each value a concept id defined in T052's `semantic-model.json`.
+  Done: 20 + 9 + 12 = 41 leaf pointers (confirmed by `check_data_dictionary.py`'s own walk of
+  the two schema files, not just hand-counted).
+- [X] T054 [P] Create `contracts/data-dictionary/README.md`: explain the three-file structure
+  and the schema → dictionary navigation path, mirroring
+  `pm100/docs/data-dictionary/README.md`; include the FR-039 "same name, different concept"
+  table (`serial`, `version` — `agent_version` vs. `instrument_software.version` vs.
+  `instrument_software.log_version` — and `*_utc`/`*_timestamp`), plus any further collision
+  found while authoring T052/T053. Done: table also adds two collisions found only while
+  cross-checking the code — `blocked_backups[].reason`'s 4-value enum vs.
+  `last_failure_category`'s full 8-value `FailureCategory` (easy to assume they're the same
+  enum; they're not), and `file_key` as a submitted *value* vs. as the `state.json` `files`
+  map's *key*.
+- [X] T055 Create `tools/check_data_dictionary.py` (stdlib-only — no new pip dependency,
+  Constitution V): load `contracts/heartbeat-payload.schema.json` and
+  `contracts/local-state.schema.json`, walk `properties` / `items` / `additionalProperties`
+  recursively to collect every leaf JSON pointer (`*` for an `additionalProperties` map key,
+  per `data-model.md`); hardcode the 9 backup-submission part names from
+  `contracts/backend-api.md` §2; load `contracts/data-dictionary/field-mappings.json` and
+  `contracts/data-dictionary/semantic-model.json`; `sys.exit(1)`, printing each offending
+  pointer/id, if any leaf pointer of the three documents is absent from `field-mappings.json`
+  or maps to an id absent from `semantic-model.json`; `sys.exit(0)` otherwise (FR-038, SC-013).
+  Done: `required_pointers()`/`main()` take explicit path args (defaulting to the real
+  contract files) so tests can point them at fixtures instead of monkeypatching module
+  globals; `check_semantic_model()` also does a light structural check of each concept entry
+  (required fields, valid `datatype`/`confidence`) as a stdlib stand-in for full validation
+  against `semantic-model.schema.json`. Verified: `python3 tools/check_data_dictionary.py` →
+  "41 fields across 3 documents, all mapped."
+- [X] T056 Create `tools/test_check_data_dictionary.py` (`unittest`, matching
+  `tools/test_fleet_backup_pull.py`'s actual convention — not pytest): a fixture with a
+  deliberately-missing pointer and one with a dangling semantic id each produce a nonzero
+  exit naming that pointer/id; a fully-covered fixture (the real checked-in dictionary)
+  exits 0. Done: 8 tests incl. the real dictionary passing, both failure modes naming the
+  offending pointer/id, malformed-entry checks, and the `_leaf_pointers` map/array-wildcard
+  walk. `python3 -m unittest discover -s tools -p 'test_*.py'` → 44 tests, all green (8 new +
+  36 pre-existing spec-004 tests unaffected).
+- [X] T057 Add a `python3 tools/check_data_dictionary.py` step to
+  `.github/workflows/windows-build.yml` (same runner, no new job — the script is
+  platform-independent) so an incomplete dictionary fails CI (FR-040). Done: added to the
+  existing `no-secret-in-source` job (ubuntu-latest, already runs on every push, no Rust
+  toolchain needed) — runs `python3 -m unittest tools.test_check_data_dictionary -v` then
+  `python3 tools/check_data_dictionary.py`. YAML validated with `yaml.safe_load`.
+
+**Checkpoint**: `tools/check_data_dictionary.py` passes; `quickstart.md` §4a can be run
+end-to-end.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase order
 
 - **Setup (P1)** → **Foundational (P2)** → **User Stories (P3–P7)** → **Polish (P8)**.
 - Foundational blocks all stories. `src/cycle.rs` (T014) + `src/run_loop.rs` (T015) skeletons live in Foundational so US1 and US5 can both build on them.
+- **Phase 10** (data dictionary) has no dependency on any user-story phase — it only reads
+  contract/schema files that already exist post-Setup — and can run any time, including in
+  parallel with the user stories or after Polish (as here, since the feature already shipped).
 
 ### User-story dependencies
 
@@ -220,6 +300,10 @@ Setup → Foundational → **US1 (MVP)** → US2 → US4 → US3 → US5 → Pol
 - Foundational: T008, T009, T010, T012 in parallel (distinct files); T011, T013, T014, T015 after their deps.
 - Per story, all `tests/*.rs` tasks marked [P] run in parallel.
 - US4 can proceed alongside US1–US3 (different files: `build.rs`, `.github/`, `main.rs`).
+- Phase 10: T052/T053/T054 in parallel (distinct files); T055 (the checker script) can be
+  written in parallel with T052–T054 too, since it only needs *some* JSON to test against —
+  but T056 (its tests) and T057 (CI wiring) need T055 done, and a meaningful T056 run needs
+  T052/T053's real files (or a fixture copy) to exercise the pass/fail paths.
 
 ## Parallel Example: Foundational
 
@@ -259,3 +343,6 @@ independently testable and does not break the previous.
   beta→stable promotion gate (≥7 days / ≥3 beta instruments / 0 Sev-1) are in
   `specs/001-v2-remote-upgrade` (FR-005a–FR-005e) and constitution v1.3.0.
 - Commit after each task or logical group.
+- **Phase 10** (T052–T057) is untouched by the feature's original P1–P5 user stories — it
+  implements the FR-036–FR-040 semantic-data-dictionary requirement added to `spec.md` on
+  2026-09-12, after the rest of this feature had already shipped (Phases 1–9 all `[X]`).
