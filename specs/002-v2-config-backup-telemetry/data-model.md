@@ -104,7 +104,10 @@ Full request contract in `contracts/backend-api.md`; `payload` object schema in
 `contracts/heartbeat-payload.schema.json`.
 
 Envelope: `measurement_type = "agent_status"`, `measured_at` = cycle-start RFC3339 UTC,
-`instrument_serial` = serial or `"unknown"`, `payload = { ... }`.
+`instrument_serial` = serial or `"unknown"`, `payload = { ... }`, `meta = { schema:
+"v2.heartbeat_payload.v1" }` — a self-description tag resolving in
+`contracts/data-dictionary/field-mappings.json`'s `schema_registry` (constitution
+Principle VII; `telemetry::HEARTBEAT_SCHEMA_ID`).
 
 `payload` fields:
 

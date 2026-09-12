@@ -33,9 +33,10 @@ SEMANTIC_MODEL = DICTIONARY_DIR / "semantic-model.json"
 FIELD_MAPPINGS = DICTIONARY_DIR / "field-mappings.json"
 
 # The heartbeat-payload.schema.json file only describes the `payload` object
-# (see its own "description"); these three envelope fields wrap it on the
-# wire per contracts/backend-api.md SS1 and are not JSON-Schema'd separately.
-HEARTBEAT_ENVELOPE_POINTERS = ["/measurement_type", "/measured_at", "/instrument_serial"]
+# (see its own "description"); these envelope fields wrap it on the wire per
+# contracts/backend-api.md SS1 and are not JSON-Schema'd separately. `/meta/schema`
+# is the document's self-description tag (doc.schema_id) — see semantic-model.json.
+HEARTBEAT_ENVELOPE_POINTERS = ["/measurement_type", "/measured_at", "/instrument_serial", "/meta/schema"]
 
 # contracts/backend-api.md SS2 — the backup submission is multipart/form-data,
 # not JSON, so there is no schema file to walk; the part list is fixed and

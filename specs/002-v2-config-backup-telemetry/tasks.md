@@ -266,6 +266,20 @@ from `field-mappings.json` makes it exit non-zero naming that pointer (SC-013).
   existing `no-secret-in-source` job (ubuntu-latest, already runs on every push, no Rust
   toolchain needed) — runs `python3 -m unittest tools.test_check_data_dictionary -v` then
   `python3 tools/check_data_dictionary.py`. YAML validated with `yaml.safe_load`.
+- [X] T058 Make the heartbeat body self-describing: add `meta: { schema:
+  "v2.heartbeat_payload.v1" }` (`telemetry::HEARTBEAT_SCHEMA_ID`) to the envelope in
+  `src/telemetry.rs::build_envelope`, the pm100-style bare-tag convention (`meta` is
+  `TelemetrySubmitRequest`'s existing free-form optional field, `specs/003-backend-api-support`)
+  since a `$schema` URL has no public host to point at. Document `state.json`'s existing
+  `schema_version: 1` as already playing this role for `v2.local_state.v1` (no code change
+  needed there — it's a fixed-path local file, not a document that travels) — added as
+  `doc.schema_id` / clarified `doc.schema_version` in `semantic-model.json`, `/meta/schema`
+  in `field-mappings.json`, and in `contracts/data-dictionary/README.md`. Updated
+  `contracts/backend-api.md` §1's example and `data-model.md`'s envelope line;
+  `tools/check_data_dictionary.py`'s `HEARTBEAT_ENVELOPE_POINTERS` now includes
+  `/meta/schema` (42 fields total). `envelope_has_required_shape` in `src/telemetry.rs`
+  asserts the new field. Not run against `cargo test`/`cargo build` in this session — no
+  Rust toolchain available here; CI (`windows-build.yml`) will exercise it on push.
 
 **Checkpoint**: `tools/check_data_dictionary.py` passes; `quickstart.md` §4a can be run
 end-to-end.

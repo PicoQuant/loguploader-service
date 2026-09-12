@@ -12,6 +12,13 @@ use crate::cycle::{CycleContext, FileOutcome, HeartbeatOutcome};
 use crate::identity::Identity;
 use crate::state::LocalBackupState;
 
+/// This envelope's document id in `contracts/data-dictionary/field-mappings.json`'s
+/// `schema_registry` — the pm100-style bare version tag (no URL: the generic telemetry
+/// endpoint's `meta` field is free-form, and a URL would need a public schema host we don't
+/// have) that lets a raw heartbeat body be resolved back to its semantic dictionary entry
+/// without out-of-band knowledge of "this came from a v2 agent" (constitution Principle VII).
+pub const HEARTBEAT_SCHEMA_ID: &str = "v2.heartbeat_payload.v1";
+
 pub fn run_pass(
     cfg: &Config,
     identity: &Identity,
@@ -52,6 +59,7 @@ pub fn build_envelope(
         "measured_at": crate::cycle::to_rfc3339(ctx.started),
         "instrument_serial": identity.serial.wire_value(),
         "payload": build_payload(cfg, identity, state, ctx),
+        "meta": { "schema": HEARTBEAT_SCHEMA_ID },
     })
 }
 
@@ -158,6 +166,7 @@ mod tests {
         assert_eq!(env["measurement_type"], "agent_status");
         assert_eq!(env["instrument_serial"], "SN-1");
         assert!(env["measured_at"].as_str().unwrap().contains('T'));
+        assert_eq!(env["meta"]["schema"], HEARTBEAT_SCHEMA_ID);
         let p = &env["payload"];
         for key in [
             "machine_id",

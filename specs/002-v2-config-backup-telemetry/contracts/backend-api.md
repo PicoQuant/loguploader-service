@@ -32,7 +32,8 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
       { "file_key": "pqdevice_db", "reason": "locked" }
     ],
     "last_backup_days": { "pqdevice_conf": "2026-09-08" }
-  }
+  },
+  "meta": { "schema": "v2.heartbeat_payload.v1" }
 }
 ```
 
@@ -41,6 +42,12 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
   submissions"` (verified).
 - `payload` must be a non-empty object (backend rejects `{}` with `422`).
 - `blocked_backups[].reason` ∈ `locked` | `absent` | `too_large` | `rejected`.
+- `meta.schema`: this envelope's self-declared document id in
+  `contracts/data-dictionary/field-mappings.json`'s `schema_registry` — a bare version tag,
+  not a URL (constitution Principle VII, `contracts/data-dictionary/README.md`). `meta` is
+  the generic `TelemetrySubmitRequest`'s optional free-form field
+  (`specs/003-backend-api-support/backend-changes.md`), same field pm100 uses for its own
+  `meta.schema`.
 
 **Success** `200`:
 ```json

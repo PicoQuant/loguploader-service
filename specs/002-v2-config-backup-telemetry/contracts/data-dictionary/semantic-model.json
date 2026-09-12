@@ -9,6 +9,16 @@
     "examples": ["2.0.0", "2.0.0-beta.2"],
     "confidence": "confirmed"
   },
+  "doc.schema_id": {
+    "id": "doc.schema_id",
+    "datatype": "string",
+    "unit": null,
+    "description": "This document's own self-declared entry in this dictionary's field-mappings.json schema_registry (e.g. \"v2.heartbeat_payload.v1\") — a bare version tag, not a URL, since the generic telemetry endpoint's `meta` field is free-form and we have no public schema host to point at. Same convention as the sibling pm100 app's `meta.schema` (its README: every telemetry wire submission there carries the tag, never a URL either). Lets a raw heartbeat body captured anywhere (a support ticket, a packet capture) resolve back to its dictionary entry without out-of-band knowledge of \"this came from a v2 agent\". state.json's doc.schema_version plays the same self-description role for v2.local_state.v1, just as a bare integer rather than a string tag, since it is a local file with a fixed known location rather than a document that travels.",
+    "aliases": ["meta.schema"],
+    "parent": null,
+    "examples": ["v2.heartbeat_payload.v1"],
+    "confidence": "confirmed"
+  },
   "doc.product": {
     "id": "doc.product",
     "datatype": "enum",
@@ -23,7 +33,7 @@
     "id": "doc.schema_version",
     "datatype": "integer",
     "unit": null,
-    "description": "On-disk format version of state.json itself (currently always 1). An unreadable file or a version other than 1 is treated as empty state (first-run semantics) rather than failing — this is a format tag for state.json, not a semantic version of the agent (see doc.agent_version).",
+    "description": "On-disk format version of state.json itself (currently always 1). An unreadable file or a version other than 1 is treated as empty state (first-run semantics) rather than failing — this is a format tag for state.json, not a semantic version of the agent (see doc.agent_version). Doubles as state.json's self-description: because the file always lives at one fixed, known path, \"schema_version: 1\" unambiguously resolves to v2.local_state.v1 in this dictionary's field-mappings.json schema_registry — the same role doc.schema_id's meta.schema string plays for a heartbeat body, which has no fixed location to rely on instead.",
     "aliases": ["schema_version"],
     "parent": null,
     "examples": [1],

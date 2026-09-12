@@ -4,6 +4,7 @@
       "/measurement_type": "telemetry.measurement_type",
       "/measured_at": "time.cycle_started_utc",
       "/instrument_serial": "identity.instrument_serial",
+      "/meta/schema": "doc.schema_id",
       "/payload/machine_id": "identity.machine_id",
       "/payload/agent_version": "doc.agent_version",
       "/payload/product": "doc.product",

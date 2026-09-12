@@ -24,16 +24,34 @@ checked with a domain expert before being relied on (currently just
 
 ## Getting from a JSON document back to this dictionary
 
-Unlike pm100's combiner record, none of v2's three documents carry a `$schema`
-self-description field — `heartbeat-payload.schema.json` documents only the inner `payload`
-object of the wire body, and `state.json` has no such field at all. So the lookup always goes
-through `field-mappings.json`'s `schema_registry`, keyed by a document id:
+Unlike pm100's combiner record, neither of v2's JSON documents carries a `$schema` URL —
+`heartbeat-payload.schema.json` documents only the inner `payload` object of the wire body,
+never the envelope, and there is no public host to point a URL at anyway. But both **do**
+self-describe with a bare version tag, the same convention pm100 itself falls back to for its
+own telemetry wire submissions (its README: "every telemetry wire submission's `meta.schema`
+... never carries a URL, only the bare version tag"):
 
-| Document id | What it is | Structural schema |
-| --- | --- | --- |
-| `v2.heartbeat_payload.v1` | the full wire body of `POST .../telemetry` (envelope + `payload`) | `../heartbeat-payload.schema.json` (payload only; the three envelope fields — `measurement_type`, `measured_at`, `instrument_serial` — are documented in `../backend-api.md` §1) |
-| `v2.backup_submission.v1` | the multipart parts of `POST .../backup` | `../backend-api.md` §2 (no JSON Schema — not a JSON body) |
-| `v2.local_state.v1` | `state.json` on disk | `../local-state.schema.json` |
+- A heartbeat body carries `meta.schema = "v2.heartbeat_payload.v1"` (`telemetry.rs`'s
+  `HEARTBEAT_SCHEMA_ID`) — the generic `TelemetrySubmitRequest`'s free-form `meta` field
+  (`specs/003-backend-api-support/backend-changes.md`), so a raw heartbeat captured anywhere
+  (a support ticket, a packet capture) resolves back to this dictionary without first knowing
+  "this came from a v2 agent".
+- `state.json` has no separate tag field, but doesn't need one: it always lives at one fixed,
+  known path, so its existing `schema_version: 1` (already required for FR-034's
+  empty-if-unreadable-or-newer gate) unambiguously means `v2.local_state.v1` — see
+  `doc.schema_version` in `semantic-model.json`.
+- The backup submission (`v2.backup_submission.v1`) is `multipart/form-data`, not JSON, to an
+  endpoint that only ever accepts this one shape — there is nothing to disambiguate and so no
+  tag was added; see `../backend-api.md` §2 for its fixed part list instead of a schema file.
+
+Either way, the lookup goes through `field-mappings.json`'s `schema_registry`, keyed by a
+document id:
+
+| Document id | What it is | Self-description | Structural schema |
+| --- | --- | --- | --- |
+| `v2.heartbeat_payload.v1` | the full wire body of `POST .../telemetry` (envelope + `payload`) | `meta.schema` field, on the wire | `../heartbeat-payload.schema.json` (payload only; the envelope fields — `measurement_type`, `measured_at`, `instrument_serial`, `meta` — are documented in `../backend-api.md` §1) |
+| `v2.backup_submission.v1` | the multipart parts of `POST .../backup` | none (single fixed shape, one endpoint) | `../backend-api.md` §2 (no JSON Schema — not a JSON body) |
+| `v2.local_state.v1` | `state.json` on disk | `schema_version` field, doubling as this tag | `../local-state.schema.json` |
 
 ```
 a field in one of the three documents  →  field-mappings.json[schema_registry][doc id][pointer]  →  a semantic-model.json id  →  meaning
