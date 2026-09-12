@@ -100,11 +100,12 @@ product/path resolution.
 python3 tools/check_data_dictionary.py
 ```
 
-Expected: exits 0. It walks every leaf pointer of `contracts/heartbeat-payload.schema.json`
+Expected: exits 0. It walks every leaf pointer of this spec's `contracts/heartbeat-payload.schema.json`
 and `contracts/local-state.schema.json`, plus the fixed backup-submission part list from
-`contracts/backend-api.md`, and fails naming any pointer missing from
-`contracts/data-dictionary/field-mappings.json` or mapped to an id absent from
-`contracts/data-dictionary/semantic-model.json`. Take an unpicked field from the response body
+`contracts/backend-api.md` — and, since the dictionary is repo-wide, spec 001's
+`contracts/upgrade-telemetry.schema.json` too — and fails naming any pointer missing from the
+repo-wide `docs/data-dictionary/field-mappings.json` or mapped to an id absent from
+`docs/data-dictionary/semantic-model.json`. Take an unpicked field from the response body
 of step 3 (e.g. `payload.instrument_software.log_version`) and confirm you can hand-trace it:
 schema → `field-mappings.json` → `semantic-model.json` → a plain-English description.
 

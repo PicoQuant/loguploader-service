@@ -1,6 +1,28 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.4.0 → 1.4.1
+Rationale: PATCH — factual correction only, no principle text changed. Principle VII's
+rationale paragraph pointed at specs/002-v2-config-backup-telemetry/contracts/data-dictionary/
+as "where this is implemented"; that dictionary was consolidated the same day to a repo-wide
+docs/data-dictionary/ (also now covering specs/001-v2-remote-upgrade's upgrade-telemetry
+document), making the pointer stale within hours of the v1.4.0 amendment. Updated the pointer
+only.
+
+Modified principles: VII (rationale pointer only; requirement text unchanged)
+Added principles: none
+Modified sections: none
+Added sections: none
+Removed sections: none
+
+Templates / files requiring updates:
+  ✅ .specify/memory/constitution.md (this file)
+  ✅ docs/data-dictionary/ (the actual move; this amendment only follows it)
+
+Deferred TODOs: none
+
+Prior report (1.3.0 → 1.4.0)
+-----------------------------
 Version change: 1.3.0 → 1.4.0
 Rationale: Add a new core principle requiring a semantic data dictionary for every feature
 that produces output data (an API response, a wire submission, or a persisted file/document),
@@ -275,10 +297,12 @@ Rationale: a field's meaning — "this is a gate key, not a timestamp"; "these t
 same-named fields across two documents are not the same concept" — is not
 reliably derivable from its name or type, and gets silently rediscovered, or
 silently misread, by every future reader without it being written down once,
-deliberately, in one place. Implemented for v2's heartbeat, backup submission, and
-local state in `specs/002-v2-config-backup-telemetry/contracts/data-dictionary/`
-(`semantic-model.json` + `field-mappings.json` + `README.md`), enforced by
-`tools/check_data_dictionary.py` — the template this principle generalizes from.
+deliberately, in one place. Implemented as a repo-wide dictionary at
+`docs/data-dictionary/` (`semantic-model.json` + `field-mappings.json` + `README.md`),
+covering v2's heartbeat, backup submission, and local state (spec 002) plus the
+v1→v2 updater's upgrade-attempt telemetry (spec 001) — one shared dictionary, not
+one per feature, so a concept is defined once and reused. Enforced by
+`tools/check_data_dictionary.py`.
 
 ## Build, Release & Distribution
 
@@ -356,4 +380,4 @@ Unavoidable complexity or a principle deviation MUST be called out and justified
 the PR; unjustified violations block merge. This file is the runtime development
 guidance source for the project.
 
-**Version**: 1.4.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-12
+**Version**: 1.4.1 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-12

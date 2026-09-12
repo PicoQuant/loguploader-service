@@ -43,9 +43,10 @@ Auth header on every call: `X-TELEMETRY-TOKEN: <compiled-in fleet token>`. Never
 - `payload` must be a non-empty object (backend rejects `{}` with `422`).
 - `blocked_backups[].reason` ∈ `locked` | `absent` | `too_large` | `rejected`.
 - `meta.schema`: this envelope's self-declared document id in
-  `contracts/data-dictionary/field-mappings.json`'s `schema_registry` — a bare version tag,
-  not a URL (constitution Principle VII, `contracts/data-dictionary/README.md`). `meta` is
-  the generic `TelemetrySubmitRequest`'s optional free-form field
+  `docs/data-dictionary/field-mappings.json`'s `schema_registry` (repo-wide, shared with
+  spec 001) — a bare version tag, not a URL (constitution Principle VII,
+  `docs/data-dictionary/README.md`). `meta` is the generic `TelemetrySubmitRequest`'s
+  optional free-form field
   (`specs/003-backend-api-support/backend-changes.md`), same field pm100 uses for its own
   `meta.schema`.
 

@@ -12,7 +12,7 @@ use crate::cycle::{CycleContext, FileOutcome, HeartbeatOutcome};
 use crate::identity::Identity;
 use crate::state::LocalBackupState;
 
-/// This envelope's document id in `contracts/data-dictionary/field-mappings.json`'s
+/// This envelope's document id in `docs/data-dictionary/field-mappings.json`'s
 /// `schema_registry` — the pm100-style bare version tag (no URL: the generic telemetry
 /// endpoint's `meta` field is free-form, and a URL would need a public schema host we don't
 /// have) that lets a raw heartbeat body be resolved back to its semantic dictionary entry

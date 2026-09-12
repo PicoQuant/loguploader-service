@@ -24,10 +24,12 @@ runtime on the target, minimal crates, `windows-service` for SCM integration, bl
 (`ureq` + rustls), local state in a JSON file under `C:\ProgramData`.
 
 Every document the agent submits or persists is also documented at the **meaning** level, not
-just structurally: a hand-authored semantic data dictionary (`contracts/data-dictionary/`),
-on the pattern of the sibling `pm100` app's `docs/data-dictionary/`, sits alongside the
-existing structural JSON Schemas and is checked for full field coverage in CI (FR-036–FR-040,
-D15).
+just structurally: a hand-authored semantic data dictionary, on the pattern of the sibling
+`pm100` app's `docs/data-dictionary/`, sits alongside the existing structural JSON Schemas
+and is checked for full field coverage in CI (FR-036–FR-040, D15). It was consolidated
+2026-09-12 to a **repo-wide** location (`docs/data-dictionary/`, not this spec's own
+`contracts/`) so spec 001's own output document could join it and reuse concepts instead of
+redefining them.
 
 ## Technical Context
 
@@ -126,9 +128,11 @@ No violations. Confirmations:
   matches v1's verbs; per-product **and per-channel** artifacts; channel in every heartbeat
   for the promotion gate.
 - **VII** (added to the constitution 2026-09-12, after this plan's initial gate — **PASS**) —
-  `contracts/data-dictionary/{semantic-model.json,field-mappings.json,README.md}` is exactly
-  the semantic dictionary the principle requires, covering all three documents v2 submits or
-  persists; coverage enforced in CI by `tools/check_data_dictionary.py` (SC-013, Phase 10).
+  `docs/data-dictionary/{semantic-model.json,field-mappings.json,README.md}` (repo-wide, not
+  spec-002-local — consolidated the same day, per the principle's own intent of one dictionary
+  rather than one per feature) is exactly the semantic dictionary the principle requires,
+  covering all three documents v2 submits or persists; coverage enforced in CI by
+  `tools/check_data_dictionary.py` (SC-013, Phase 10).
 
 ## Project Structure
 
@@ -144,14 +148,17 @@ specs/002-v2-config-backup-telemetry/
 │   ├── cli.md
 │   ├── backend-api.md
 │   ├── heartbeat-payload.schema.json
-│   ├── local-state.schema.json
-│   ├── semantic-model.schema.json    # format of data-dictionary/semantic-model.json (FR-036-040)
-│   ├── field-mappings.schema.json    # format of data-dictionary/field-mappings.json
-│   └── data-dictionary/              # authored content — /speckit-tasks + implementation
-│       ├── README.md
-│       ├── semantic-model.json
-│       └── field-mappings.json
+│   └── local-state.schema.json
 └── tasks.md             # /speckit-tasks output
+
+docs/data-dictionary/    # repo-wide (FR-036-040, consolidated 2026-09-12 — not spec-002-local;
+│                        #   also covers specs/001-v2-remote-upgrade's upgrade_attempt document)
+├── README.md
+├── semantic-model.json
+├── field-mappings.json
+└── schema/
+    ├── semantic-model.schema.json    # format of ../semantic-model.json
+    └── field-mappings.schema.json    # format of ../field-mappings.json
 ```
 
 ### Source Code (repository root)

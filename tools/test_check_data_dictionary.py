@@ -16,11 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_data_dictionary as cdd  # noqa: E402
 
-REAL_CONTRACTS = Path(__file__).resolve().parent.parent / "specs" / "002-v2-config-backup-telemetry" / "contracts"
-REAL_HEARTBEAT_SCHEMA = REAL_CONTRACTS / "heartbeat-payload.schema.json"
-REAL_LOCAL_STATE_SCHEMA = REAL_CONTRACTS / "local-state.schema.json"
-REAL_FIELD_MAPPINGS = REAL_CONTRACTS / "data-dictionary" / "field-mappings.json"
-REAL_SEMANTIC_MODEL = REAL_CONTRACTS / "data-dictionary" / "semantic-model.json"
+REAL_DICTIONARY_DIR = Path(__file__).resolve().parent.parent / "docs" / "data-dictionary"
+REAL_SEMANTIC_MODEL = REAL_DICTIONARY_DIR / "semantic-model.json"
 
 
 class Base(unittest.TestCase):
@@ -68,7 +65,6 @@ class TestMissingMapping(Base):
                 "properties": {"machine_id": {"type": "string"}, "agent_version": {"type": "string"}},
             },
         )
-        local_state_schema = self.write("local_state.schema.json", {"type": "object", "properties": {}})
         semantic_model = self.write(
             "semantic-model.json",
             {"identity.machine_id": {"id": "identity.machine_id", "datatype": "string",
@@ -76,17 +72,11 @@ class TestMissingMapping(Base):
         )
         field_mappings = self.write(
             "field-mappings.json",
-            {
-                "schema_registry": {
-                    "v2.heartbeat_payload.v1": {"/payload/machine_id": "identity.machine_id"},
-                    "v2.backup_submission.v1": {p: "identity.machine_id" for p in cdd.BACKUP_SUBMISSION_POINTERS},
-                    "v2.local_state.v1": {},
-                }
-            },
+            {"schema_registry": {"v2.heartbeat_payload.v1": {"/payload/machine_id": "identity.machine_id"}}},
         )
+        sources = [cdd.DocumentSource(doc_id="v2.heartbeat_payload.v1", schema_path=heartbeat_schema, schema_prefix="/payload")]
         code, out, err = self.run_main(
-            heartbeat_schema_path=heartbeat_schema,
-            local_state_schema_path=local_state_schema,
+            sources=sources,
             field_mappings_path=field_mappings,
             semantic_model_path=semantic_model,
         )
@@ -100,26 +90,48 @@ class TestDanglingConceptId(Base):
         heartbeat_schema = self.write(
             "heartbeat.schema.json", {"type": "object", "properties": {"machine_id": {"type": "string"}}}
         )
-        local_state_schema = self.write("local_state.schema.json", {"type": "object", "properties": {}})
         semantic_model = self.write("semantic-model.json", {})
         field_mappings = self.write(
             "field-mappings.json",
-            {
-                "schema_registry": {
-                    "v2.heartbeat_payload.v1": {"/payload/machine_id": "identity.does_not_exist"},
-                    "v2.backup_submission.v1": {p: "identity.does_not_exist" for p in cdd.BACKUP_SUBMISSION_POINTERS},
-                    "v2.local_state.v1": {},
-                }
-            },
+            {"schema_registry": {"v2.heartbeat_payload.v1": {"/payload/machine_id": "identity.does_not_exist"}}},
         )
+        sources = [cdd.DocumentSource(doc_id="v2.heartbeat_payload.v1", schema_path=heartbeat_schema, schema_prefix="/payload")]
         code, _, err = self.run_main(
-            heartbeat_schema_path=heartbeat_schema,
-            local_state_schema_path=local_state_schema,
+            sources=sources,
             field_mappings_path=field_mappings,
             semantic_model_path=semantic_model,
         )
         self.assertEqual(code, 1)
         self.assertIn("identity.does_not_exist", err)
+
+
+class TestFixedPointerSource(Base):
+    """A DocumentSource with no schema (e.g. a multipart body) — fixed_pointers only."""
+
+    def test_fixed_pointers_checked_without_a_schema(self):
+        semantic_model = self.write(
+            "semantic-model.json",
+            {"backup.file_key": {"id": "backup.file_key", "datatype": "string",
+                                  "description": "d", "confidence": "confirmed"}},
+        )
+        field_mappings = self.write(
+            "field-mappings.json",
+            {"schema_registry": {"v2.backup_submission.v1": {"/file_key": "backup.file_key"}}},
+        )
+        sources = [cdd.DocumentSource(doc_id="v2.backup_submission.v1", fixed_pointers=("/file_key", "/content"))]
+        code, out, err = self.run_main(sources=sources, field_mappings_path=field_mappings, semantic_model_path=semantic_model)
+        self.assertEqual(code, 1)
+        self.assertIn("/content", err)
+
+
+class TestMissingDocumentInRegistry(Base):
+    def test_document_absent_from_registry_is_reported(self):
+        semantic_model = self.write("semantic-model.json", {})
+        field_mappings = self.write("field-mappings.json", {"schema_registry": {}})
+        sources = [cdd.DocumentSource(doc_id="v2.some_doc.v1", fixed_pointers=("/x",))]
+        code, _, err = self.run_main(sources=sources, field_mappings_path=field_mappings, semantic_model_path=semantic_model)
+        self.assertEqual(code, 1)
+        self.assertIn("v2.some_doc.v1", err)
 
 
 class TestMalformedConceptEntry(Base):

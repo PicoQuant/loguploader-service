@@ -457,11 +457,16 @@ lowest risk.
   versions that FR-004a already treats as independent, nullable fields), and `*_utc` /
   `*_timestamp` naming (`measured_at` = cycle-start client time vs. `received_at` = backend
   receipt time vs. `last_backup_utc_day` = the once-per-day gate key, not a timestamp).
-- **FR-040**: The dictionary lives under version control alongside the schemas it describes
-  (e.g. `specs/002-v2-config-backup-telemetry/contracts/data-dictionary/`) and MUST be kept
-  in sync with `contracts/backend-api.md`, `data-model.md`, and the schema files whenever a
-  submitted field is added, renamed, or reinterpreted — a schema/data-model change without a
-  matching dictionary update is an incomplete change, not a follow-up.
+- **FR-040**: The dictionary lives under version control, kept in sync with
+  `contracts/backend-api.md`, `data-model.md`, and the schema files whenever a submitted
+  field is added, renamed, or reinterpreted — a schema/data-model change without a matching
+  dictionary update is an incomplete change, not a follow-up. **Amendment (2026-09-12):**
+  the dictionary is **repo-wide**, at `docs/data-dictionary/`, not local to this spec's own
+  `contracts/` — every spec in this repo that defines an output document registers into the
+  same `semantic-model.json`/`field-mappings.json` rather than starting a new dictionary, per
+  constitution Principle VII. This spec (002) was the first document set covered; spec 001's
+  `v2.upgrade_attempt.v1` was added at the same time as this amendment, reusing several of
+  this spec's own concepts (`identity.machine_id`, `telemetry.channel`, `doc.agent_version`).
 
 ### Key Entities *(include if feature involves data)*
 

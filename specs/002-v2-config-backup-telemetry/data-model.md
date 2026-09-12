@@ -105,8 +105,8 @@ Full request contract in `contracts/backend-api.md`; `payload` object schema in
 
 Envelope: `measurement_type = "agent_status"`, `measured_at` = cycle-start RFC3339 UTC,
 `instrument_serial` = serial or `"unknown"`, `payload = { ... }`, `meta = { schema:
-"v2.heartbeat_payload.v1" }` — a self-description tag resolving in
-`contracts/data-dictionary/field-mappings.json`'s `schema_registry` (constitution
+"v2.heartbeat_payload.v1" }` — a self-description tag resolving in the repo-wide
+`docs/data-dictionary/field-mappings.json`'s `schema_registry` (constitution
 Principle VII; `telemetry::HEARTBEAT_SCHEMA_ID`).
 
 `payload` fields:
@@ -169,10 +169,14 @@ Retryable next cycle: `NoNetwork`, `Auth`, `BackendError`, `FileLocked`.
 Not retried blindly (surfaced, wait for change / new build): `RejectedBadRequest`, `TooLarge`,
 `FileAbsent`. (FR-006, FR-012, FR-014, FR-026, FR-027)
 
-## Semantic Data Dictionary (`contracts/data-dictionary/`)
+## Semantic Data Dictionary (`docs/data-dictionary/`, repo-wide)
 
 Meaning-layer companion to the structural schemas above (FR-036–FR-040, D15). Three files,
-on the `pm100/docs/data-dictionary` pattern:
+on the `pm100/docs/data-dictionary` pattern. **Consolidated to a repo-wide location**
+(2026-09-12, post-launch) rather than living under this spec's own `contracts/` — it now
+also covers spec 001's `v2.upgrade_attempt.v1` document, reusing concepts like
+`identity.machine_id` and `doc.agent_version` rather than redefining them per spec. See
+`docs/data-dictionary/README.md` for the full document registry.
 
 ### `semantic-model.json`
 
@@ -192,7 +196,7 @@ Flat map, concept id → entry:
 **Namespaces** (FR-037): `identity.*`, `telemetry.*`, `backup.*`, `time.*`, `config.*`,
 `doc.*` (envelope-level fields shared by every submission: `product`, `agent_version`).
 
-Format validated by `contracts/semantic-model.schema.json`.
+Format validated by `docs/data-dictionary/schema/semantic-model.schema.json`.
 
 ### `field-mappings.json`
 
@@ -214,7 +218,7 @@ Format validated by `contracts/semantic-model.schema.json`.
   backup-submission part list in `contracts/backend-api.md` MUST appear here (SC-013),
   enforced by `tools/check_data_dictionary.py` (D15).
 
-Format validated by `contracts/field-mappings.schema.json`.
+Format validated by `docs/data-dictionary/schema/field-mappings.schema.json`.
 
 ### `README.md`
 

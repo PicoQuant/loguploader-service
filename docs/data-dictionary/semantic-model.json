@@ -39,6 +39,26 @@
     "examples": [1],
     "confidence": "confirmed"
   },
+  "doc.upgrade_from_version": {
+    "id": "doc.upgrade_from_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "The version installed before this upgrade attempt (spec 001, `src/upgrade.rs::upgrade_report_cli`). A version-transition endpoint, not a general 'current version' concept — see doc.agent_version for that. Empty string if the caller (the updater script) didn't pass `--from`.",
+    "aliases": ["from_version"],
+    "parent": null,
+    "examples": ["0.11.12", ""],
+    "confidence": "confirmed"
+  },
+  "doc.upgrade_to_version": {
+    "id": "doc.upgrade_to_version",
+    "datatype": "string",
+    "unit": null,
+    "description": "The version this attempt tried to install. Defaults to the reporting binary's own compiled-in version (doc.agent_version) when the caller doesn't pass `--to` — meaning after a successful (`outcome: \"ok\"`) attempt the two concepts usually coincide, but they are not the same concept: a `rollback_failed`/`install_failed` report can carry a `to_version` the reporting binary never actually became.",
+    "aliases": ["to_version"],
+    "parent": null,
+    "examples": ["2.0.0", "2.1.0-beta.3"],
+    "confidence": "confirmed"
+  },
   "identity.machine_id": {
     "id": "identity.machine_id",
     "datatype": "string",
@@ -73,10 +93,10 @@
     "id": "telemetry.measurement_type",
     "datatype": "enum",
     "unit": null,
-    "description": "The generic PicoQuant telemetry endpoint's document-kind tag (shared backend machinery also used by other products, e.g. pm100's powermeter measurements use their own values of the same field). v2 heartbeats always send \"agent_status\"; the backup submission goes to a different endpoint entirely and has no measurement_type.",
+    "description": "The generic PicoQuant telemetry endpoint's document-kind tag (shared backend machinery also used by other products, e.g. pm100's powermeter measurements use their own values of the same field). v2 sends \"agent_status\" for a heartbeat (spec 002) and \"upgrade_attempt\" for a terminal upgrade outcome (spec 001, `src/upgrade.rs`); the backup submission goes to a different endpoint entirely and has no measurement_type.",
     "aliases": ["measurement_type"],
     "parent": null,
-    "examples": ["agent_status"],
+    "examples": ["agent_status", "upgrade_attempt"],
     "confidence": "confirmed"
   },
   "telemetry.channel": {
@@ -269,6 +289,46 @@
     "examples": [0],
     "confidence": "confirmed"
   },
+  "telemetry.upgrade_outcome": {
+    "id": "telemetry.upgrade_outcome",
+    "datatype": "enum",
+    "unit": null,
+    "description": "The terminal result of one v1→v2 (or v2→v2) upgrade attempt, reported once per attempt by `loguploaderservice.exe upgrade-report` (spec 001). `rollback_failed` is the only true Sev-1 per `contracts/upgrade-telemetry.schema.json`'s own description and constitution Principle VI.",
+    "aliases": ["outcome"],
+    "parent": null,
+    "examples": ["ok", "integrity_failed", "install_failed", "health_check_failed", "rolled_back", "rollback_failed"],
+    "confidence": "confirmed"
+  },
+  "telemetry.upgrade_cause": {
+    "id": "telemetry.upgrade_cause",
+    "datatype": "string",
+    "unit": null,
+    "description": "Short human-readable reason for a non-ok telemetry.upgrade_outcome. Null for \"ok\". Free text, not itself machine-parsed.",
+    "aliases": ["cause"],
+    "parent": null,
+    "examples": ["sha256 mismatch", null],
+    "confidence": "confirmed"
+  },
+  "telemetry.upgrade_health_ms": {
+    "id": "telemetry.upgrade_health_ms",
+    "datatype": "integer",
+    "unit": "milliseconds",
+    "description": "How long the post-upgrade health check took. Null if no health check ran for this attempt (e.g. it failed before reaching that step).",
+    "aliases": ["health_ms"],
+    "parent": null,
+    "examples": [1450, null],
+    "confidence": "confirmed"
+  },
+  "telemetry.upgrade_config_notes": {
+    "id": "telemetry.upgrade_config_notes",
+    "datatype": "string",
+    "unit": null,
+    "description": "One v1 config key that could not be translated during migration (FR-014b of spec 001) — an item of the `config_notes` array, which is itself null (not an empty array) when there were none to report. The wire pointer (`/payload/config_notes/*`) resolves to one item, not the array as a whole, the same convention as `backup.file_key` under `blocked_backups[]`.",
+    "aliases": ["config_notes", "config_notes[]"],
+    "parent": null,
+    "examples": ["legacy_key_x"],
+    "confidence": "confirmed"
+  },
   "backup.file_key": {
     "id": "backup.file_key",
     "datatype": "string",
@@ -333,7 +393,7 @@
     "id": "time.cycle_started_utc",
     "datatype": "iso8601-datetime",
     "unit": null,
-    "description": "The UTC instant this cycle began (captured once at cycle start, before any file reads or HTTP calls). Confirmed identical across every place it appears: the heartbeat envelope's measured_at, the heartbeat payload's cycle.started_utc, a backup submission's client_timestamp, a state.json file entry's last_success_utc, and state.json's last_cycle.started_utc all derive from the same captured value for a given cycle — not four different clocks, one clock read once.",
+    "description": "The UTC instant this cycle began (captured once at cycle start, before any file reads or HTTP calls). Confirmed identical across every place it appears: the heartbeat envelope's measured_at, the heartbeat payload's cycle.started_utc, a backup submission's client_timestamp, a state.json file entry's last_success_utc, and state.json's last_cycle.started_utc all derive from the same captured value for a given cycle — not four different clocks, one clock read once. NOTE: `measured_at` is only this concept inside a heartbeat (`v2.heartbeat_payload.v1`) — the *same field name* on an upgrade-telemetry submission (`v2.upgrade_attempt.v1`) is time.upgrade_attempt_utc instead; see the README's collision table.",
     "aliases": ["measured_at", "cycle.started_utc", "client_timestamp", "last_success_utc", "last_cycle.started_utc"],
     "parent": null,
     "examples": ["2026-09-08T08:17:10Z"],
@@ -347,6 +407,16 @@
     "aliases": ["last_heartbeat_utc"],
     "parent": null,
     "examples": ["2026-09-08T08:17:11Z", null],
+    "confidence": "confirmed"
+  },
+  "time.upgrade_attempt_utc": {
+    "id": "time.upgrade_attempt_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "The UTC instant `loguploaderservice.exe upgrade-report` (spec 001) ran and recorded this attempt's terminal outcome — an installer/updater timestamp, unrelated to any agent cycle. Appears twice per submission (envelope `measured_at` and `payload.attempt_utc`), from two independent `now_rfc3339()` calls in `src/upgrade.rs::upgrade_report_cli` a few lines apart — not the single-captured-value guarantee time.cycle_started_utc has, so the two may differ by a few milliseconds in principle, though both represent the same real-world event.",
+    "aliases": ["attempt_utc", "measured_at (on v2.upgrade_attempt.v1 only)"],
+    "parent": null,
+    "examples": ["2026-09-10T14:02:33Z"],
     "confidence": "confirmed"
   }
 }

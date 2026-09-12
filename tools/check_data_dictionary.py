@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Check the v2 agent's semantic data dictionary for full field coverage (SC-013).
+"""Check this repo's shared semantic data dictionary for full field coverage (SC-013).
 
-Spec: specs/002-v2-config-backup-telemetry/spec.md FR-036-FR-040, plan.md/research.md D15.
+Spec: originated by specs/002-v2-config-backup-telemetry/spec.md FR-036-FR-040,
+plan.md/research.md D15; generalized to a repo-wide dictionary (docs/data-dictionary/)
+under constitution Principle VII, covering every spec's output documents, not just one.
 
-Walks the structural JSON Schemas that describe what v2 submits/persists
-(heartbeat payload, local state) and combines that with the fixed, non-JSON
-backup-submission part list (contracts/backend-api.md SS2) to get the full set
-of fields v2's wire/persisted documents can carry. Every one of those fields
-MUST resolve, via field-mappings.json, to a concept defined in
-semantic-model.json — this script is that check, not a general JSON Schema
-validator. It has no third-party dependency (stdlib only), matching
-Constitution V: it never links into the agent binary, it only reads the
+Walks the structural JSON Schemas that describe what each covered document looks
+like (a spec's own contracts/*.schema.json) and combines that with any fixed,
+non-JSON part lists (e.g. a multipart body) to get the full set of fields those
+documents can carry. Every one of those fields MUST resolve, via
+docs/data-dictionary/field-mappings.json, to a concept defined in
+docs/data-dictionary/semantic-model.json — this script is that check, not a
+general JSON Schema validator. It has no third-party dependency (stdlib only),
+matching Constitution V: it never links into the agent binary, it only reads the
 contract/dictionary JSON already checked into the repo.
+
+To cover a new document: add one entry to DOCUMENT_SOURCES below.
 
 Exit 0: every field is mapped and every mapping resolves. Exit 1: prints each
 offending pointer/id and exits non-zero (for CI, tools/test_check_data_dictionary.py).
@@ -21,26 +25,22 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-CONTRACTS_DIR = Path(__file__).resolve().parent.parent / "specs" / "002-v2-config-backup-telemetry" / "contracts"
-DICTIONARY_DIR = CONTRACTS_DIR / "data-dictionary"
-
-HEARTBEAT_SCHEMA = CONTRACTS_DIR / "heartbeat-payload.schema.json"
-LOCAL_STATE_SCHEMA = CONTRACTS_DIR / "local-state.schema.json"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DICTIONARY_DIR = REPO_ROOT / "docs" / "data-dictionary"
 SEMANTIC_MODEL = DICTIONARY_DIR / "semantic-model.json"
 FIELD_MAPPINGS = DICTIONARY_DIR / "field-mappings.json"
 
-# The heartbeat-payload.schema.json file only describes the `payload` object
-# (see its own "description"); these envelope fields wrap it on the wire per
-# contracts/backend-api.md SS1 and are not JSON-Schema'd separately. `/meta/schema`
-# is the document's self-description tag (doc.schema_id) — see semantic-model.json.
-HEARTBEAT_ENVELOPE_POINTERS = ["/measurement_type", "/measured_at", "/instrument_serial", "/meta/schema"]
+SPEC_002_CONTRACTS = REPO_ROOT / "specs" / "002-v2-config-backup-telemetry" / "contracts"
+SPEC_001_CONTRACTS = REPO_ROOT / "specs" / "001-v2-remote-upgrade" / "contracts"
 
-# contracts/backend-api.md SS2 — the backup submission is multipart/form-data,
-# not JSON, so there is no schema file to walk; the part list is fixed and
-# hardcoded here (kept in sync with backend-api.md by a human, per FR-040).
+# contracts/backend-api.md SS2 (spec 002) — the backup submission is
+# multipart/form-data, not JSON, so there is no schema file to walk; the part
+# list is fixed and hardcoded here (kept in sync with backend-api.md by a
+# human, per FR-040).
 BACKUP_SUBMISSION_POINTERS = [
     "/content",
     "/instrument_serial",
@@ -53,8 +53,65 @@ BACKUP_SUBMISSION_POINTERS = [
     "/client_timestamp",
 ]
 
+
+@dataclass(frozen=True)
+class DocumentSource:
+    """One document this dictionary must cover end to end.
+
+    `fixed_pointers`: pointers not derivable from a JSON Schema (envelope
+    fields wrapping a schema'd sub-object, or an entire non-JSON body).
+    `schema_path` + `schema_prefix`: if set, every leaf pointer of the schema
+    at `schema_path` is walked and prefixed with `schema_prefix` before being
+    added to this document's required-pointer set.
+    """
+
+    doc_id: str
+    fixed_pointers: tuple[str, ...] = ()
+    schema_path: Path | None = None
+    schema_prefix: str = ""
+
+
+DOCUMENT_SOURCES: list[DocumentSource] = [
+    DocumentSource(
+        doc_id="v2.heartbeat_payload.v1",
+        # heartbeat-payload.schema.json only describes the `payload` object
+        # (see its own "description"); these envelope fields wrap it on the
+        # wire per contracts/backend-api.md SS1 and are not JSON-Schema'd
+        # separately. `/meta/schema` is the document's self-description tag
+        # (doc.schema_id) — see semantic-model.json.
+        fixed_pointers=("/measurement_type", "/measured_at", "/instrument_serial", "/meta/schema"),
+        schema_path=SPEC_002_CONTRACTS / "heartbeat-payload.schema.json",
+        schema_prefix="/payload",
+    ),
+    DocumentSource(
+        doc_id="v2.backup_submission.v1",
+        fixed_pointers=tuple(BACKUP_SUBMISSION_POINTERS),
+    ),
+    DocumentSource(
+        doc_id="v2.local_state.v1",
+        schema_path=SPEC_002_CONTRACTS / "local-state.schema.json",
+    ),
+    DocumentSource(
+        doc_id="v2.upgrade_attempt.v1",
+        # Same generic telemetry endpoint as the heartbeat, envelope fields
+        # not separately schema'd; no `meta` field is sent for this one.
+        fixed_pointers=("/measurement_type", "/measured_at", "/instrument_serial"),
+        schema_path=SPEC_001_CONTRACTS / "upgrade-telemetry.schema.json",
+        schema_prefix="/payload",
+    ),
+]
+
 REQUIRED_CONCEPT_FIELDS = {"id", "datatype", "description", "confidence"}
-VALID_DATATYPES = {"string", "enum", "integer", "boolean", "object", "iso8601-datetime", "date", "binary"}
+VALID_DATATYPES = {
+    "string",
+    "enum",
+    "integer",
+    "boolean",
+    "object",
+    "iso8601-datetime",
+    "date",
+    "binary",
+}
 VALID_CONFIDENCE = {"confirmed", "uncertain"}
 
 
@@ -103,24 +160,15 @@ def _load_json(path: Path) -> Any:
         return json.load(f)
 
 
-def required_pointers(
-    heartbeat_schema_path: Path = HEARTBEAT_SCHEMA,
-    local_state_schema_path: Path = LOCAL_STATE_SCHEMA,
-) -> dict[str, list[str]]:
-    heartbeat_schema = _load_json(heartbeat_schema_path)
-    local_state_schema = _load_json(local_state_schema_path)
-
-    heartbeat_pointers = list(HEARTBEAT_ENVELOPE_POINTERS)
-    for p in _leaf_pointers(heartbeat_schema, ""):
-        heartbeat_pointers.append(f"/payload{p}")
-
-    local_state_pointers = list(_leaf_pointers(local_state_schema, ""))
-
-    return {
-        "v2.heartbeat_payload.v1": heartbeat_pointers,
-        "v2.backup_submission.v1": list(BACKUP_SUBMISSION_POINTERS),
-        "v2.local_state.v1": local_state_pointers,
-    }
+def required_pointers(sources: list[DocumentSource] = DOCUMENT_SOURCES) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for src in sources:
+        pointers = list(src.fixed_pointers)
+        if src.schema_path is not None:
+            schema = _load_json(src.schema_path)
+            pointers.extend(f"{src.schema_prefix}{p}" for p in _leaf_pointers(schema, ""))
+        result[src.doc_id] = pointers
+    return result
 
 
 def check_semantic_model(semantic_model: dict) -> list[str]:
@@ -163,12 +211,11 @@ def check_coverage(required: dict[str, list[str]], field_mappings: dict, semanti
 
 
 def main(
-    heartbeat_schema_path: Path = HEARTBEAT_SCHEMA,
-    local_state_schema_path: Path = LOCAL_STATE_SCHEMA,
+    sources: list[DocumentSource] = DOCUMENT_SOURCES,
     field_mappings_path: Path = FIELD_MAPPINGS,
     semantic_model_path: Path = SEMANTIC_MODEL,
 ) -> int:
-    required = required_pointers(heartbeat_schema_path, local_state_schema_path)
+    required = required_pointers(sources)
     field_mappings = _load_json(field_mappings_path)
     semantic_model = _load_json(semantic_model_path)
 

@@ -178,6 +178,11 @@ a technical unknown — tracked in `plan.md` Complexity Tracking + Next Actions.
 
 ## D15. Semantic data dictionary — hand-authored, schema-validated coverage
 
+> **Superseded in part by D16 (2026-09-12):** the dictionary's *location* moved from this
+> spec's own `contracts/data-dictionary/` to a repo-wide `docs/data-dictionary/`. Left below
+> unedited as the accurate record of the original per-spec decision and its reasoning, which
+> still holds for everything except location (hand-authored, schema-validated, code-independent).
+
 - **Decision**: the FR-036–FR-040 semantic dictionary lives at
   `contracts/data-dictionary/` as three hand-authored files, mirroring `pm100`'s
   `docs/data-dictionary/` exactly:
@@ -224,6 +229,42 @@ a technical unknown — tracked in `plan.md` Complexity Tracking + Next Actions.
   - *Skip the meta-schemas, freeform JSON* — cheaper, but then a malformed entry (missing
     `confidence`, wrong nesting) only surfaces when a human reads it; the meta-schema catches
     it the same cycle the dictionary is edited.
+
+## D16. Consolidate the data dictionary to a repo-wide location (2026-09-12)
+
+- **Decision**: move `contracts/data-dictionary/{README.md,semantic-model.json,field-mappings.json}`
+  and `contracts/{semantic-model,field-mappings}.schema.json` to repo-root
+  `docs/data-dictionary/{README.md,semantic-model.json,field-mappings.json,schema/*.schema.json}`,
+  and register `specs/001-v2-remote-upgrade`'s `upgrade_attempt` telemetry document
+  (`v2.upgrade_attempt.v1`) into the same `semantic-model.json`/`field-mappings.json`, reusing
+  concepts already defined for spec 002 (`identity.machine_id`, `identity.instrument_serial`,
+  `telemetry.channel`, `doc.agent_version`, `telemetry.measurement_type`) rather than
+  redefining them under a second, spec-001-local dictionary.
+- **Rationale**: constitution Principle VII (added the same day as D15) makes this dictionary
+  a project-wide obligation, not a spec-002 one — "every feature that produces output data."
+  Scoping what that would mean for specs 001/003/004 (a separate exercise) found spec 001's
+  upgrade-telemetry document reuses several spec-002 concepts verbatim; keeping D15's
+  per-spec layout would have meant either duplicating those concept definitions (risking
+  silent drift between two `identity.machine_id` entries) or spec 001 depending on spec
+  002's `contracts/` directory, which is a worse coupling than a shared, spec-independent
+  location. `docs/` (not `specs/002.../contracts/`) also matches where the sibling `pm100`
+  app's own dictionary already lives, for a consistent place a PicoQuant engineer would look.
+- **Mechanics**: `tools/check_data_dictionary.py` was generalized from two hardcoded schema
+  paths to a `DOCUMENT_SOURCES: list[DocumentSource]` table (`doc_id` +
+  optional `fixed_pointers` + optional `schema_path`/`schema_prefix`) — covering a new
+  spec's document is one list entry, not a rewrite of the walking logic. Confirmed via the
+  checker's own first failing run that `upgrade-telemetry.schema.json`'s `config_notes` is an
+  array of strings (leaf pointer `/payload/config_notes/*`, one item), not a single
+  array-shaped field — caught the same way FR-037's "check against working code, not just
+  the field name" discipline was meant to catch such things.
+- **Alternatives considered**:
+  - *Leave spec 002's dictionary where it is; give spec 001 its own* — simpler in isolation,
+    but the concept-duplication risk above is exactly what a semantic dictionary exists to
+    prevent; doing it to the dictionary itself would be a poor precedent.
+  - *A dictionary per spec, cross-referencing shared concepts by pointing at spec 002's file*
+    — avoids duplication but makes every consuming spec's dictionary depend on spec 002's
+    directory continuing to exist at that path; a plain repo-root shared location has no such
+    directional dependency.
 
 ## D13. Testing approach
 

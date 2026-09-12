@@ -48,6 +48,21 @@
       "/last_cycle/counts/unchanged": "telemetry.cycle_count_unchanged",
       "/last_cycle/counts/blocked": "telemetry.cycle_count_blocked",
       "/last_cycle/counts/retry_later": "telemetry.cycle_count_retry_later"
+    },
+    "v2.upgrade_attempt.v1": {
+      "/measurement_type": "telemetry.measurement_type",
+      "/measured_at": "time.upgrade_attempt_utc",
+      "/instrument_serial": "identity.instrument_serial",
+      "/payload/machine_id": "identity.machine_id",
+      "/payload/from_version": "doc.upgrade_from_version",
+      "/payload/to_version": "doc.upgrade_to_version",
+      "/payload/outcome": "telemetry.upgrade_outcome",
+      "/payload/cause": "telemetry.upgrade_cause",
+      "/payload/channel": "telemetry.channel",
+      "/payload/attempt_utc": "time.upgrade_attempt_utc",
+      "/payload/agent_version": "doc.agent_version",
+      "/payload/health_ms": "telemetry.upgrade_health_ms",
+      "/payload/config_notes/*": "telemetry.upgrade_config_notes"
     }
   }
 }

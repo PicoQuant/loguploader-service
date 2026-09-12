@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://picoquant.com/schemas/v2agent/semantic-model.json",
-  "title": "v2 agent semantic data dictionary — semantic-model.json",
-  "description": "Format of contracts/data-dictionary/semantic-model.json: a flat map of dot-namespaced concept id -> concept entry (FR-036, FR-037, D15). Structural sibling: heartbeat-payload.schema.json / local-state.schema.json describe document SHAPE; this describes concept MEANING.",
+  "$id": "https://picoquant.com/schemas/loguploader-service/semantic-model.json",
+  "title": "loguploader-service semantic data dictionary — semantic-model.json",
+  "description": "Format of docs/data-dictionary/semantic-model.json: a flat map of dot-namespaced concept id -> concept entry, shared across every spec in this repo that produces output data (constitution Principle VII; originated by spec 002's FR-036-FR-040, D15). Structural sibling: each spec's own contracts/*.schema.json describes document SHAPE; this describes concept MEANING, once, for the whole repo.",
   "type": "object",
   "additionalProperties": {
     "$ref": "#/$defs/concept"

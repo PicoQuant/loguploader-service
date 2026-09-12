@@ -287,6 +287,64 @@ end-to-end.
 
 ---
 
+## Phase 11: Consolidate the data dictionary repo-wide (added 2026-09-12)
+
+**Goal**: one shared `docs/data-dictionary/` covering every spec's output documents (not
+just spec 002's), so a concept like `identity.machine_id` is defined once and reused, per
+constitution Principle VII. Prompted by scoping what Principle VII would require of specs
+001/003/004: spec 001's `upgrade_attempt` telemetry turned out to reuse 3 of spec 002's
+concepts directly, making a shared dictionary clearly preferable to three drifting copies.
+
+**Independent Test**: `python3 tools/check_data_dictionary.py` still exits 0, now reporting
+more documents than before.
+
+- [X] T059 [P] Move `contracts/data-dictionary/{README.md,semantic-model.json,field-mappings.json}`
+  and `contracts/{semantic-model,field-mappings}.schema.json` to repo-root
+  `docs/data-dictionary/{README.md,semantic-model.json,field-mappings.json,schema/{semantic-model,field-mappings}.schema.json}`
+  (`git mv`, history preserved). Updated the two meta-schemas' `$id`/title/description to
+  describe a repo-wide dictionary rather than "v2 agent" specifically.
+- [X] T060 Generalize `tools/check_data_dictionary.py`: replaced the hardcoded
+  heartbeat/local-state paths with a `DocumentSource` list (`doc_id` + optional
+  `fixed_pointers` + optional `schema_path`/`schema_prefix`), so a new spec's document is one
+  list entry, not a rewrite. `required_pointers()`/`main()` now take `sources` instead of
+  per-document path kwargs. Updated `tools/test_check_data_dictionary.py` to match (10 tests:
+  the 8 pre-existing plus a fixed-pointer-only-source case and a
+  document-missing-from-registry case) — full suite still green (46 tests total, spec 004's
+  36 unaffected).
+- [X] T061 Add spec 001's `v2.upgrade_attempt.v1` (`specs/001-v2-remote-upgrade/contracts/upgrade-telemetry.schema.json`)
+  to `DOCUMENT_SOURCES` and to `field-mappings.json`'s `schema_registry` (13 pointers). New
+  concepts in `semantic-model.json`: `telemetry.upgrade_outcome`, `telemetry.upgrade_cause`,
+  `telemetry.upgrade_health_ms`, `telemetry.upgrade_config_notes`, `doc.upgrade_from_version`,
+  `doc.upgrade_to_version`, `time.upgrade_attempt_utc` — cross-checked against
+  `src/upgrade.rs::upgrade_report_cli`, e.g. confirmed envelope `measured_at` and
+  `payload.attempt_utc` are two independent `now_rfc3339()` calls (not one captured value like
+  spec 002's `ctx.started` pattern) before defining `time.upgrade_attempt_utc`, and confirmed
+  `config_notes` is an array of strings so its leaf pointer is `/payload/config_notes/*` (one
+  item), not the array field itself — caught by a first failing run of the checker. Reused
+  `identity.machine_id`, `identity.instrument_serial`, `telemetry.channel`, `doc.agent_version`,
+  `telemetry.measurement_type` (added `"upgrade_attempt"` to its examples) unchanged.
+- [X] T062 Rewrote `docs/data-dictionary/README.md` for the repo-wide scope: fixed every
+  relative link (the file moved two directories up), added spec 001's document to the
+  "getting back to this dictionary" table, and added two collisions found only while doing
+  this consolidation: the envelope field name `measured_at` itself resolves to a different
+  concept depending on which document it's in (`time.cycle_started_utc` on a heartbeat,
+  `time.upgrade_attempt_utc` on an upgrade-attempt), and the five-way `version` collision
+  once spec 001's `from_version`/`to_version` joined the existing three.
+- [X] T063 Swept the repo for the old path and updated every **current-state** reference
+  (`src/telemetry.rs` doc-comment, `data-model.md`, `quickstart.md` §4a,
+  `contracts/backend-api.md` §1, `plan.md` Summary/Post-Design-re-check/Project-Structure) to
+  `docs/data-dictionary/`. Left **historical** records alone rather than rewriting them
+  (`research.md`'s D15 decision as originally written, `tasks.md`'s T052–T058 "Done:" notes,
+  `.specify/memory/constitution.md`'s existing Sync Impact Report history) and instead: added
+  spec.md FR-040 an "Amendment (2026-09-12)" paragraph rather than editing the original FR
+  text in place; left `research.md` D15 as the original per-spec rationale (still correct
+  as a record of what was decided *then*) — see D16 note added there.
+
+**Checkpoint**: `python3 tools/check_data_dictionary.py` → `55 fields across 4 documents,
+all mapped.`; `python3 -m unittest discover -s tools -p 'test_*.py'` → 46 tests, all green.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase order
