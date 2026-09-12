@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/fleet-backup-archive/power-manifest.json",
+  "title": "fleet_backup_pull.py powermeter manifest (_powermeter/manifest.json)",
+  "description": "Persisted at <power_dir>/manifest.json (tools/fleet_backup_pull.py::save_power_manifest, US2), atomic write. power_dir is either <product>/<serial>/_powermeter/ (nested under an existing config-backup instrument folder) or standalone powermeter/<system_serial>/ — see resolve_power_dir; that choice is pinned in `location` and never revisited. The kind field guards against ever loading a config-backup manifest.json (manifest.schema.json) by mistake, since both are named manifest.json but live in different folders. An unreadable file, a wrong kind, or a schema_version other than 1 is rebuilt from records/*.json on disk (rebuild_power_manifest_from_disk) rather than failing the run.",
+  "type": "object",
+  "required": ["schema_version", "kind", "system_serial", "location", "updated_utc", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "type": "string",
+      "const": "powermeter",
+      "description": "distinguishes this file from a config-backup manifest.json (manifest.schema.json) — both files share the same filename in different folders"
+    },
+    "system_serial": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the PicoQuant instrument this power meter measured, or the literal \"unknown\" if the backend row had none"
+    },
+    "location": {
+      "type": "string",
+      "enum": ["luminosa", "solira", "powermeter"],
+      "description": "which tree this _powermeter folder lives under — resolved once by resolve_power_dir and pinned here; never recomputed on a later run even if a matching instrument folder later appears or disappears"
+    },
+    "updated_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "when the last run that touched this folder finished"
+    },
+    "records": {
+      "type": "array",
+      "description": "every archived power/laser measurement record for this system, any order",
+      "items": {
+        "$ref": "#/$defs/powerRecordEntry"
+      }
+    }
+  },
+  "$defs": {
+    "powerRecordEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "received_at",
+        "measured_at",
+        "measurement_type",
+        "instrument_serial",
+        "system_serial",
+        "record_file",
+        "content_sha256",
+        "is_latest",
+        "archived_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": ["string", "null"],
+          "description": "backend telemetry record id — the dedupe key. Null only for an entry reconstructed by rebuild_power_manifest_from_disk from a records/*.json file that turned out to have no id of its own."
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "when the backend received this record — the ordering key within one measurement_type"
+        },
+        "measured_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "when the power meter actually took the measurement, per the submitting app; preferred over received_at for the record filename when present"
+        },
+        "measurement_type": {
+          "type": "string",
+          "description": "e.g. \"combiner_power\" — groups records for the <measurement_type>.latest.json mirror"
+        },
+        "instrument_serial": {
+          "type": ["string", "null"],
+          "description": "the power-meter DEVICE's own serial (e.g. a Thorlabs PM100USB serial) — distinct from system_serial, the PicoQuant instrument being measured. Null if the backend row omitted it."
+        },
+        "system_serial": {
+          "type": "string",
+          "description": "the PicoQuant instrument this measurement is about — same concept as the manifest's own system_serial, repeated per-record since records may in principle span systems"
+        },
+        "record_file": {
+          "type": "string",
+          "description": "POSIX path of this record's records/*.json file, relative to the _powermeter folder"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of the stored JSON bytes themselves — this archive's own integrity reference, since the backend issues no content hash for a telemetry record the way it does for a config backup"
+        },
+        "is_latest": {
+          "type": "boolean",
+          "description": "true for the newest received_at of this measurement_type — the one also mirrored at <measurement_type>.latest.json"
+        },
+        "archived_utc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "when this archive run wrote this entry — distinct from received_at (backend receipt) and measured_at (device measurement time); three different clocks"
+        }
+      }
+    }
+  }
+}

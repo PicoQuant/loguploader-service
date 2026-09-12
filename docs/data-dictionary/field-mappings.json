@@ -63,6 +63,42 @@
       "/payload/agent_version": "doc.agent_version",
       "/payload/health_ms": "telemetry.upgrade_health_ms",
       "/payload/config_notes/*": "telemetry.upgrade_config_notes"
+    },
+    "v2.fleet_archive_manifest.v1": {
+      "/schema_version": "doc.schema_version",
+      "/product": "doc.product",
+      "/instrument_serial": "identity.instrument_serial",
+      "/machine_id": "identity.machine_id",
+      "/updated_utc": "time.archive_updated_utc",
+      "/artifacts/*/id": "identity.backend_record_id",
+      "/artifacts/*/file_key": "backup.file_key",
+      "/artifacts/*/source_path": "backup.source_path",
+      "/artifacts/*/rel_path": "backup.rel_path",
+      "/artifacts/*/content_sha256": "backup.content_hash",
+      "/artifacts/*/size_bytes": "backup.size_bytes",
+      "/artifacts/*/received_at": "time.received_at",
+      "/artifacts/*/file_mtime": "backup.file_mtime",
+      "/artifacts/*/agent_version": "doc.agent_version",
+      "/artifacts/*/version_file": "backup.version_file",
+      "/artifacts/*/is_latest": "backup.is_latest",
+      "/artifacts/*/archived_utc": "time.archived_utc"
+    },
+    "v2.fleet_archive_power_manifest.v1": {
+      "/schema_version": "doc.schema_version",
+      "/kind": "doc.archive_kind",
+      "/system_serial": "identity.system_serial",
+      "/location": "doc.archive_location",
+      "/updated_utc": "time.archive_updated_utc",
+      "/records/*/id": "identity.backend_record_id",
+      "/records/*/received_at": "time.received_at",
+      "/records/*/measured_at": "time.power_measurement_utc",
+      "/records/*/measurement_type": "telemetry.measurement_type",
+      "/records/*/instrument_serial": "identity.power_meter_serial",
+      "/records/*/system_serial": "identity.system_serial",
+      "/records/*/record_file": "backup.record_file",
+      "/records/*/content_sha256": "backup.local_content_hash",
+      "/records/*/is_latest": "backup.is_latest",
+      "/records/*/archived_utc": "time.archived_utc"
     }
   }
 }

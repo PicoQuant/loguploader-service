@@ -36,6 +36,7 @@ FIELD_MAPPINGS = DICTIONARY_DIR / "field-mappings.json"
 
 SPEC_002_CONTRACTS = REPO_ROOT / "specs" / "002-v2-config-backup-telemetry" / "contracts"
 SPEC_001_CONTRACTS = REPO_ROOT / "specs" / "001-v2-remote-upgrade" / "contracts"
+SPEC_004_CONTRACTS = REPO_ROOT / "specs" / "004-fleet-backup-restore" / "contracts"
 
 # contracts/backend-api.md SS2 (spec 002) — the backup submission is
 # multipart/form-data, not JSON, so there is no schema file to walk; the part
@@ -99,6 +100,14 @@ DOCUMENT_SOURCES: list[DocumentSource] = [
         schema_path=SPEC_001_CONTRACTS / "upgrade-telemetry.schema.json",
         schema_prefix="/payload",
     ),
+    DocumentSource(
+        doc_id="v2.fleet_archive_manifest.v1",
+        schema_path=SPEC_004_CONTRACTS / "manifest.schema.json",
+    ),
+    DocumentSource(
+        doc_id="v2.fleet_archive_power_manifest.v1",
+        schema_path=SPEC_004_CONTRACTS / "power-manifest.schema.json",
+    ),
 ]
 
 REQUIRED_CONCEPT_FIELDS = {"id", "datatype", "description", "confidence"}
@@ -122,25 +131,46 @@ def _type_names(schema: dict) -> list[str]:
     return t if isinstance(t, list) else [t]
 
 
-def _leaf_pointers(schema: dict, prefix: str) -> Iterator[str]:
+def _resolve_ref(ref: str, root: dict) -> dict:
+    """Resolve a local `$ref` of the form `#/$defs/<name>` against `root`.
+
+    Only local $defs refs are supported — every schema this tool walks is a
+    single self-contained file, never a multi-file $ref chain.
+    """
+    if not ref.startswith("#/"):
+        raise ValueError(f"unsupported $ref (not a local pointer): {ref!r}")
+    node: Any = root
+    for segment in ref[2:].split("/"):
+        node = node[segment]
+    return node
+
+
+def _leaf_pointers(schema: dict, prefix: str, root: dict | None = None) -> Iterator[str]:
     """Yield every leaf JSON pointer under `schema`, rooted at `prefix`.
 
     An object with `properties` recurses per property. An object with only
     `additionalProperties` (a map, e.g. state.json's `files`) recurses once
     under a `*` wildcard segment. An array recurses under `*` into `items`.
-    Anything else (string/integer/boolean/enum, or a `[type, "null"]` leaf)
-    is a leaf: yield `prefix` itself.
+    A `$ref` (local `#/$defs/<name>` only) resolves against `root` — the
+    top-level schema passed to the first call — before continuing. Anything
+    else (string/integer/boolean/enum, or a `[type, "null"]` leaf) is a leaf:
+    yield `prefix` itself.
     """
+    if root is None:
+        root = schema
+    if "$ref" in schema:
+        yield from _leaf_pointers(_resolve_ref(schema["$ref"], root), prefix, root)
+        return
     types = _type_names(schema)
     if "object" in types or "properties" in schema:
         props = schema.get("properties")
         if props:
             for name, subschema in props.items():
-                yield from _leaf_pointers(subschema, f"{prefix}/{name}")
+                yield from _leaf_pointers(subschema, f"{prefix}/{name}", root)
             return
         additional = schema.get("additionalProperties")
         if isinstance(additional, dict):
-            yield from _leaf_pointers(additional, f"{prefix}/*")
+            yield from _leaf_pointers(additional, f"{prefix}/*", root)
             return
         # object with no properties and no (schema) additionalProperties: leaf
         yield prefix
@@ -148,7 +178,7 @@ def _leaf_pointers(schema: dict, prefix: str) -> Iterator[str]:
     if "array" in types:
         items = schema.get("items")
         if isinstance(items, dict):
-            yield from _leaf_pointers(items, f"{prefix}/*")
+            yield from _leaf_pointers(items, f"{prefix}/*", root)
             return
         yield prefix
         return

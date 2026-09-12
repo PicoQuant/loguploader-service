@@ -94,7 +94,10 @@ filenames alone.
 ## Manifest (`<machine-id>/manifest.json`) — persisted
 
 Written atomically (`manifest.json.tmp` → `os.replace`). The record of what the folder holds
-**and** the incremental cursor.
+**and** the incremental cursor. Structural schema: `contracts/manifest.schema.json`; semantic
+dictionary: `docs/data-dictionary/` (`v2.fleet_archive_manifest.v1`, added 2026-09-12,
+constitution Principle VII), both cross-checked against `tools/fleet_backup_pull.py`'s
+`Manifest`/`ManifestEntry` dataclasses.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -138,6 +141,9 @@ backend row (`json.dumps(row, sort_keys=True, indent=2)`).
 ## Power Manifest (`_powermeter/manifest.json`) — persisted — US2
 
 Written atomically. `kind: "powermeter"` distinguishes it from the config-backup manifest.
+Structural schema: `contracts/power-manifest.schema.json`; semantic dictionary:
+`docs/data-dictionary/` (`v2.fleet_archive_power_manifest.v1`), both cross-checked against
+`PowerManifest`/`PowerRecordEntry`.
 
 | Field | Type | Notes |
 |---|---|---|

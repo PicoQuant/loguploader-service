@@ -23,7 +23,7 @@
     "id": "doc.product",
     "datatype": "enum",
     "unit": null,
-    "description": "The product bucket this build was compiled for (one build per product, FR-002b). Determines the watched-file set and which fleet token the binary carries. Only present in the heartbeat payload — the backup submission carries no product field of its own; its product is implied by the URL path.",
+    "description": "The product bucket this build was compiled for (one build per product, FR-002b). Determines the watched-file set and which fleet token the binary carries. Only present in the heartbeat payload — the backup submission carries no product field of its own; its product is implied by the URL path. Mirrored unchanged into a fleet_backup_pull.py archive's manifest.json (spec 004) as the value that was true when each backup was submitted.",
     "aliases": ["product", "bucket"],
     "parent": null,
     "examples": ["luminosa", "solira"],
@@ -33,7 +33,7 @@
     "id": "doc.schema_version",
     "datatype": "integer",
     "unit": null,
-    "description": "On-disk format version of state.json itself (currently always 1). An unreadable file or a version other than 1 is treated as empty state (first-run semantics) rather than failing — this is a format tag for state.json, not a semantic version of the agent (see doc.agent_version). Doubles as state.json's self-description: because the file always lives at one fixed, known path, \"schema_version: 1\" unambiguously resolves to v2.local_state.v1 in this dictionary's field-mappings.json schema_registry — the same role doc.schema_id's meta.schema string plays for a heartbeat body, which has no fixed location to rely on instead.",
+    "description": "On-disk format version of a persisted document (currently always 1 everywhere it's used: v2's own state.json, and fleet_backup_pull.py's manifest.json / _powermeter/manifest.json, spec 004). An unreadable file or a version other than 1 is treated as empty/rebuilt-from-disk (first-run semantics) rather than failing — this is a format tag for the document, not a semantic version of whatever produced it (see doc.agent_version). For a document at one fixed, known path (state.json; a given machine's manifest.json), \"schema_version: 1\" also doubles as that document's self-description, unambiguously resolving to its schema_registry id — the same role doc.schema_id's meta.schema string plays for a heartbeat body, which has no fixed location to rely on instead.",
     "aliases": ["schema_version"],
     "parent": null,
     "examples": [1],
@@ -57,6 +57,26 @@
     "aliases": ["to_version"],
     "parent": null,
     "examples": ["2.0.0", "2.1.0-beta.3"],
+    "confidence": "confirmed"
+  },
+  "doc.archive_kind": {
+    "id": "doc.archive_kind",
+    "datatype": "string",
+    "unit": null,
+    "description": "fleet_backup_pull.py's (spec 004) fixed discriminator on `_powermeter/manifest.json`, guarding against ever loading a config-backup `manifest.json` by mistake — both files share the literal filename `manifest.json` in different folders. Narrower purpose than doc.schema_id: it distinguishes two sibling document shapes at the same filename, not a full versioned schema-registry key.",
+    "aliases": ["kind"],
+    "parent": null,
+    "examples": ["powermeter"],
+    "confidence": "confirmed"
+  },
+  "doc.archive_location": {
+    "id": "doc.archive_location",
+    "datatype": "enum",
+    "unit": null,
+    "description": "Which tree a `_powermeter` folder was filed under, decided once by `resolve_power_dir` and pinned in the manifest — never recomputed on a later run even if a matching instrument folder later appears or disappears. Not the same concept as doc.product: a `powermeter` location means no matching Luminosa/Solira instrument folder existed the first time this system's records were seen, a state a config-backup document never has.",
+    "aliases": ["location"],
+    "parent": null,
+    "examples": ["luminosa", "solira", "powermeter"],
     "confidence": "confirmed"
   },
   "identity.machine_id": {
@@ -89,14 +109,44 @@
     "examples": ["file", "unknown"],
     "confidence": "confirmed"
   },
+  "identity.backend_record_id": {
+    "id": "identity.backend_record_id",
+    "datatype": "string",
+    "unit": null,
+    "description": "The backend's own UUID for one backup or telemetry record — the dedupe key fleet_backup_pull.py (spec 004) uses to decide \"already archived\". v2 itself never sees or stores this id (it's assigned by the backend on receipt, after v2's submission completes); it only exists in documents that read the backend back, i.e. this archive tool's manifests. Null only for an entry `rebuild_manifest_from_disk` / `rebuild_power_manifest_from_disk` reconstructed without backend contact — such an entry falls back to `(rel_path, content_sha256)` (config-backup) or the record file's own content (powermeter) as a dedupe key until the next clean manifest write restores the real id.",
+    "aliases": ["id"],
+    "parent": null,
+    "examples": ["9f2c7d10-1a2b-4c3d-8e9f-0a1b2c3d4e5f", null],
+    "confidence": "confirmed"
+  },
+  "identity.system_serial": {
+    "id": "identity.system_serial",
+    "datatype": "string",
+    "unit": null,
+    "description": "The PicoQuant instrument (Luminosa/Solira) a power-meter measurement is *about* — as opposed to identity.instrument_serial, which is the instrument *running the v2 agent* that reports a heartbeat/backup. The same concept as the sibling pm100 app's own `system.serial_number` (same meaning, but a separate, independently-versioned dictionary — the two repos don't share a concept id even though pm100 is where this value originates before the backend, and fleet_backup_pull.py, ever see it).",
+    "aliases": ["system_serial"],
+    "parent": null,
+    "examples": ["1051032", "unknown"],
+    "confidence": "confirmed"
+  },
+  "identity.power_meter_serial": {
+    "id": "identity.power_meter_serial",
+    "datatype": "string",
+    "unit": null,
+    "description": "The power-meter DEVICE's own serial (e.g. a Thorlabs PM100USB serial, per the pm100 app's own dictionary) recorded on an archived powermeter telemetry record — a third, unrelated device from both identity.instrument_serial (the Luminosa/Solira instrument) and identity.system_serial (the instrument the power meter is measuring). Confusingly, the JSON field is literally named `instrument_serial` on this record, same as identity.instrument_serial's own field name, but the two concepts never appear in the same document and mean physically different devices — see the README's collision table.",
+    "aliases": ["instrument_serial (on a powermeter record only)"],
+    "parent": null,
+    "examples": ["M01333314", null],
+    "confidence": "confirmed"
+  },
   "telemetry.measurement_type": {
     "id": "telemetry.measurement_type",
     "datatype": "enum",
     "unit": null,
-    "description": "The generic PicoQuant telemetry endpoint's document-kind tag (shared backend machinery also used by other products, e.g. pm100's powermeter measurements use their own values of the same field). v2 sends \"agent_status\" for a heartbeat (spec 002) and \"upgrade_attempt\" for a terminal upgrade outcome (spec 001, `src/upgrade.rs`); the backup submission goes to a different endpoint entirely and has no measurement_type.",
+    "description": "The generic PicoQuant telemetry endpoint's document-kind tag (shared backend machinery also used by other products, e.g. pm100's powermeter measurements use their own values of the same field). v2 sends \"agent_status\" for a heartbeat (spec 002) and \"upgrade_attempt\" for a terminal upgrade outcome (spec 001, `src/upgrade.rs`); the backup submission goes to a different endpoint entirely and has no measurement_type. fleet_backup_pull.py (spec 004) archives this same field verbatim on each powermeter record it pulls (e.g. \"combiner_power\") — it doesn't invent the value, just stores what the backend already returned.",
     "aliases": ["measurement_type"],
     "parent": null,
-    "examples": ["agent_status", "upgrade_attempt"],
+    "examples": ["agent_status", "upgrade_attempt", "combiner_power"],
     "confidence": "confirmed"
   },
   "telemetry.channel": {
@@ -389,6 +439,66 @@
     "examples": ["<raw file bytes>"],
     "confidence": "confirmed"
   },
+  "backup.rel_path": {
+    "id": "backup.rel_path",
+    "datatype": "string",
+    "unit": null,
+    "description": "Where a watched file's current/newest copy lives inside a fleet_backup_pull.py archive tree (spec 004) — `rel(source_path)`: drive letter and leading `.`/`..` segments stripped, backslashes normalised to forward slashes, falling back to `file_key` split on `/` if nothing usable remains. Distinct from backup.source_path (the original Windows path, kept verbatim) and from backup.version_file (a specific historical version's own path, always under `_versions/`).",
+    "aliases": ["rel_path"],
+    "parent": null,
+    "examples": ["ProgramData/PicoQuant/Luminosa/LastKnownGood.xml"],
+    "confidence": "confirmed"
+  },
+  "backup.version_file": {
+    "id": "backup.version_file",
+    "datatype": "string",
+    "unit": null,
+    "description": "POSIX path of one archived version's `_versions/**/*.bak` file, relative to the machine folder — self-describing (encodes time.received_at and the first 8 hex of backup.content_hash in its own filename) so the manifest can be rebuilt from these filenames alone if it's lost.",
+    "aliases": ["version_file"],
+    "parent": null,
+    "examples": ["_versions/ProgramData/PicoQuant/Luminosa/LastKnownGood.xml/2026-09-08T12-52-52Z__b72cde42.bak"],
+    "confidence": "confirmed"
+  },
+  "backup.record_file": {
+    "id": "backup.record_file",
+    "datatype": "string",
+    "unit": null,
+    "description": "POSIX path of one archived powermeter telemetry record's own `records/*.json` file, relative to the `_powermeter` folder — the record-archive analogue of backup.version_file, but for a whole JSON record rather than a `.bak` blob (a powermeter record has no separate \"current copy\" mirror at a fixed rel_path the way a config-backup file does; the `<measurement_type>.latest.json` mirror plays that role instead).",
+    "aliases": ["record_file"],
+    "parent": null,
+    "examples": ["records/2026-09-10T11-43-39Z__76d36f96.json"],
+    "confidence": "confirmed"
+  },
+  "backup.is_latest": {
+    "id": "backup.is_latest",
+    "datatype": "boolean",
+    "unit": null,
+    "description": "True for the newest time.received_at among entries sharing the same grouping key — backup.rel_path for a config-backup ManifestEntry, telemetry.measurement_type for a powermeter PowerRecordEntry. The \"latest\" entry is the one also mirrored outside `_versions/`/`records/` (at rel_path itself, or at `<measurement_type>.latest.json`).",
+    "aliases": ["is_latest"],
+    "parent": null,
+    "examples": [true, false],
+    "confidence": "confirmed"
+  },
+  "backup.size_bytes": {
+    "id": "backup.size_bytes",
+    "datatype": "integer",
+    "unit": "bytes",
+    "description": "Size of an archived config-backup file's content, as reported by the backend admin API row (`contracts/backend-admin-api.md`) and carried into the manifest verbatim — a report/sanity field, not itself re-verified against the downloaded bytes (backup.content_hash is what integrity-checks the download).",
+    "aliases": ["size_bytes"],
+    "parent": null,
+    "examples": [47],
+    "confidence": "confirmed"
+  },
+  "backup.local_content_hash": {
+    "id": "backup.local_content_hash",
+    "datatype": "string",
+    "unit": null,
+    "description": "SHA-256 fleet_backup_pull.py itself computes over the stored bytes of an archived powermeter JSON record — its own integrity reference, invented locally, since (unlike a config-backup file's backup.content_hash) the backend issues no content hash for a telemetry record to verify a download against. Same field name (`content_sha256`) as backup.content_hash but a genuinely different concept: this one is never compared against anything the backend sent, only recomputed and trusted on each rebuild.",
+    "aliases": ["content_sha256 (on a powermeter record only)"],
+    "parent": null,
+    "examples": ["c3d4e5f6...(64 hex chars)"],
+    "confidence": "confirmed"
+  },
   "time.cycle_started_utc": {
     "id": "time.cycle_started_utc",
     "datatype": "iso8601-datetime",
@@ -417,6 +527,46 @@
     "aliases": ["attempt_utc", "measured_at (on v2.upgrade_attempt.v1 only)"],
     "parent": null,
     "examples": ["2026-09-10T14:02:33Z"],
+    "confidence": "confirmed"
+  },
+  "time.received_at": {
+    "id": "time.received_at",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "When the backend received a submission from a v2 agent — the backend's own receipt timestamp. v2 itself never submits or persists this (it's assigned by the backend, after the fact), which is why no concept existed for it before spec 004: fleet_backup_pull.py is the first thing in this repo that actually reads it back from the backend and persists it locally, in both the config-backup manifest (ordering key across versions of the same file; also embedded in backup.version_file's own filename) and the powermeter manifest (ordering key within one measurement_type). Do not confuse with time.archived_utc (when *this archive tool* wrote the entry) or, on a powermeter record, time.power_measurement_utc (when the device took the reading).",
+    "aliases": ["received_at"],
+    "parent": null,
+    "examples": ["2026-09-08T12:52:52Z"],
+    "confidence": "confirmed"
+  },
+  "time.power_measurement_utc": {
+    "id": "time.power_measurement_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "When the power meter device actually took the reading behind one archived powermeter record, per the submitting app — preferred over time.received_at for the record's filename when present. A third, unrelated meaning for a field literally named `measured_at`, alongside time.cycle_started_utc (on a heartbeat) and time.upgrade_attempt_utc (on an upgrade-attempt submission) — see the README's collision table.",
+    "aliases": ["measured_at (on a powermeter record only)"],
+    "parent": null,
+    "examples": ["2026-09-10T11:43:38Z"],
+    "confidence": "confirmed"
+  },
+  "time.archived_utc": {
+    "id": "time.archived_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "When a fleet_backup_pull.py run wrote this specific archive entry (a ManifestEntry or a PowerRecordEntry) — distinct from time.received_at (when the backend got the artifact from the v2 agent, possibly long before this tool ever ran) and, for a config backup, from backup.file_mtime (the source file's own filesystem mtime on the original machine). Empty string for an entry reconstructed by a rebuild rather than a live download (the rebuild has no record of when the original write happened).",
+    "aliases": ["archived_utc"],
+    "parent": null,
+    "examples": ["2026-09-08T13:00:00Z", ""],
+    "confidence": "confirmed"
+  },
+  "time.archive_updated_utc": {
+    "id": "time.archive_updated_utc",
+    "datatype": "iso8601-datetime",
+    "unit": null,
+    "description": "When the most recent fleet_backup_pull.py run that touched this folder (a machine's config-backup folder, or a `_powermeter` folder) finished — a folder-level \"last touched\" timestamp, one per manifest, as opposed to time.archived_utc's per-entry granularity. Not the same concept as time.cycle_finished_utc (v2's own \"last successful heartbeat\" on state.json) despite the similar \"last time something ran\" shape — different tool, different process, different document.",
+    "aliases": ["updated_utc"],
+    "parent": null,
+    "examples": ["2026-09-10T11:44:00Z"],
     "confidence": "confirmed"
   }
 }

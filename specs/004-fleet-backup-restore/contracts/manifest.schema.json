@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://picoquant.com/schemas/fleet-backup-archive/manifest.json",
+  "title": "fleet_backup_pull.py config-backup manifest (manifest.json)",
+  "description": "Persisted at <root>/<product>/<serial>/<machine-id>/manifest.json, atomic write (tools/fleet_backup_pull.py::save_manifest). The record of what the machine folder holds and the incremental cursor. An unreadable file, or a schema_version other than 1, is rebuilt from the _versions/**/*.bak filenames on disk (rebuild_manifest_from_disk) rather than failing the run.",
+  "type": "object",
+  "required": ["schema_version", "product", "instrument_serial", "machine_id", "updated_utc", "artifacts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "product": {
+      "type": "string",
+      "enum": ["luminosa", "solira"],
+      "description": "which product tree this machine folder lives under"
+    },
+    "instrument_serial": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the PicoQuant instrument's serial, or the literal \"unknown\" — the <serial> path segment"
+    },
+    "machine_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the v2 agent's machine identifier — the <machine-id> path segment; always present, all-zero-GUID fallback"
+    },
+    "updated_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "when the last run that touched this folder finished"
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "every archived version of every watched file for this machine, any order",
+      "items": {
+        "$ref": "#/$defs/manifestEntry"
+      }
+    }
+  },
+  "$defs": {
+    "manifestEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "file_key",
+        "source_path",
+        "rel_path",
+        "content_sha256",
+        "size_bytes",
+        "received_at",
+        "file_mtime",
+        "agent_version",
+        "version_file",
+        "is_latest",
+        "archived_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": ["string", "null"],
+          "description": "backend backup id — the dedupe key. Null only for an entry reconstructed by rebuild_manifest_from_disk, which cannot recover it from a .bak filename alone; such entries fall back to (rel_path, content_sha256) as the dedupe key until the next clean manifest write restores real ids."
+        },
+        "file_key": {
+          "type": "string",
+          "description": "the v2 agent's logical file identifier for this watched file (contracts/backend-admin-api.md)"
+        },
+        "source_path": {
+          "type": "string",
+          "description": "original Windows path as reported by the v2 agent, verbatim"
+        },
+        "rel_path": {
+          "type": "string",
+          "description": "rel(source_path) — where this file's current/newest copy lives in the archive tree, drive letter stripped, backslashes normalised to forward slashes"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of the downloaded bytes, verified against the backend row's own content_sha256 at download time"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "when the backend received this version from the v2 agent — the ordering key across versions of the same file, and part of the _versions/*.bak filename"
+        },
+        "file_mtime": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "the watched file's own filesystem mtime on the source machine, if the agent reported one; carried through for a future restore's own change-detection"
+        },
+        "agent_version": {
+          "type": ["string", "null"],
+          "description": "the v2 agent version that produced this backup submission; informational only"
+        },
+        "version_file": {
+          "type": "string",
+          "description": "POSIX path of this version's _versions/**/*.bak file, relative to the machine folder"
+        },
+        "is_latest": {
+          "type": "boolean",
+          "description": "true for the newest received_at of this file_key/rel_path — the one also mirrored at rel_path itself outside _versions/"
+        },
+        "archived_utc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "when this archive run wrote this entry — distinct from received_at (when the backend got it from the agent) and from file_mtime (the source file's own mtime); three different clocks"
+        }
+      }
+    }
+  }
+}

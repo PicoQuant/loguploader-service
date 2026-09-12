@@ -2,11 +2,12 @@
 
 Semantic data dictionary, **shared across every spec in this repo** that produces output
 data: currently the v2 agent's **heartbeat** (spec 002), its **config backup** submission
-(spec 002), its **local state** (`state.json`, spec 002), and the v1→v2 updater's
-**upgrade-attempt** telemetry (spec 001). On the pattern of the sibling `pm100` app's
-`docs/data-dictionary/`; originated by spec 002's FR-036–FR-040, now generalized as
-constitution Principle VII ("Semantic Output Schema") — every feature that produces output
-data registers its documents here rather than starting a new, separate dictionary.
+(spec 002), its **local state** (`state.json`, spec 002), the v1→v2 updater's
+**upgrade-attempt** telemetry (spec 001), and `tools/fleet_backup_pull.py`'s two archive
+**manifests** (spec 004). On the pattern of the sibling `pm100` app's `docs/data-dictionary/`;
+originated by spec 002's FR-036–FR-040, now generalized as constitution Principle VII
+("Semantic Output Schema") — every feature that produces output data registers its documents
+here rather than starting a new, separate dictionary.
 
 - Each spec's own `contracts/*.schema.json` — JSON Schema (2020-12) for **structural**
   validation of *that spec's* documents (e.g.
@@ -69,6 +70,8 @@ document id:
 | `v2.backup_submission.v1` | multipart parts of `POST .../backup` (spec 002) | none (single fixed shape, one endpoint) | `specs/002-v2-config-backup-telemetry/contracts/backend-api.md` §2 (no JSON Schema — not a JSON body) |
 | `v2.local_state.v1` | `state.json` on disk (spec 002) | `schema_version` field, doubling as this tag | `specs/002-v2-config-backup-telemetry/contracts/local-state.schema.json` |
 | `v2.upgrade_attempt.v1` | full wire body of `POST .../telemetry`, `measurement_type="upgrade_attempt"` (spec 001) | none yet (see above) | `specs/001-v2-remote-upgrade/contracts/upgrade-telemetry.schema.json` (payload only; envelope documented alongside the schema's own description) |
+| `v2.fleet_archive_manifest.v1` | `<machine-id>/manifest.json` on disk, one per archived machine (spec 004) | `schema_version` field, doubling as this tag (same convention as `v2.local_state.v1`) | `specs/004-fleet-backup-restore/contracts/manifest.schema.json` |
+| `v2.fleet_archive_power_manifest.v1` | `_powermeter/manifest.json` on disk, one per archived system (spec 004) | `schema_version` **and** `kind: "powermeter"` together (the extra `kind` guards against loading a sibling `manifest.json` of the *other* shape by mistake — see `doc.archive_kind`) | `specs/004-fleet-backup-restore/contracts/power-manifest.schema.json` |
 
 ```
 a field in one of the covered documents  →  field-mappings.json[schema_registry][doc id][pointer]  →  a semantic-model.json id  →  meaning
@@ -83,15 +86,20 @@ sync.
 
 ## "Same name, different concept" — and the reverse
 
-The collisions below are the ones actually found while building `field-mappings.json`
-across both specs; see `semantic-model.json` for the full description of each concept.
+The collisions below are the ones actually found while building `field-mappings.json` across
+all three specs; see `semantic-model.json` for the full description of each concept.
 
 | Name(s) | Meaning A | Meaning B |
 | --- | --- | --- |
 | `serial` (as `instrument_serial`) | `identity.instrument_serial` — **this** agent's instrument, read from `LastOpenSerial.txt`, shared unchanged between the heartbeat and the upgrade-attempt submission | the sibling `pm100` app's `system.serial_number` concept — a *different* instrument, the one being measured by a power meter, not the one running an agent. Same English word, unrelated devices; the two dictionaries never share a concept id for this. |
 | `version` | `doc.agent_version` — the **v2 agent's own** build version | `telemetry.instrument_control_version` — the Luminosa/Solira **control-software** version installed now | `telemetry.instrument_log_version` — the control-software version that **last actually ran**, from a `.pqlog` header (may lag the installed version) | `doc.upgrade_from_version` / `doc.upgrade_to_version` — a version-*transition* pair specific to one upgrade attempt, not "the current version" of anything; `to_version` defaults to `doc.agent_version` when the caller doesn't override it, so the two often coincide on a successful attempt but are not the same concept. Five independent fields across two documents — never assume any two of them are equal. |
 | `measured_at` (the envelope field name itself) | on `v2.heartbeat_payload.v1`: `time.cycle_started_utc` — cycle-start time | on `v2.upgrade_attempt.v1`: `time.upgrade_attempt_utc` — an installer/updater timestamp, unrelated to any agent cycle. Same field name on the same generic telemetry envelope, two different concepts depending on `measurement_type` — resolve via the document id, never the field name alone. |
-| `*_utc` / `*_timestamp` (within one document) | `time.cycle_started_utc` — when the **cycle began** (aliases: `measured_at` on the heartbeat, `cycle.started_utc`, `client_timestamp`, `last_success_utc`, `last_cycle.started_utc` — all the *same* captured instant for a given cycle, confirmed in `src/telemetry.rs` + `src/backup.rs` + `src/cycle.rs`) | `time.cycle_finished_utc` (`last_heartbeat_utc`) — when the cycle **finished**, captured separately, only on a successful heartbeat | `backup.gate_day` (`last_backup_utc_day`, `last_backup_days.<file_key>`) — a **date**, not a timestamp: the once-per-day gate's key, evaluated in UTC. Reading it as "the time of the last backup" is the specific trap this collision calls out. | `received_at` — the backend's own receipt-time field, returned in every submission's `200` response (e.g. spec 002's `contracts/backend-api.md` §1/§2). Deliberately **not** a concept in `semantic-model.json`: it's a field the backend *emits back*, not one v2 submits or persists, so there is no leaf pointer for it to attach to on either document. Named here only because it's easy to confuse with the client-side timestamps above. |
+| `*_utc` / `*_timestamp` (within v2's own documents, spec 001/002) | `time.cycle_started_utc` — when the **cycle began** (aliases: `measured_at` on the heartbeat, `cycle.started_utc`, `client_timestamp`, `last_success_utc`, `last_cycle.started_utc` — all the *same* captured instant for a given cycle, confirmed in `src/telemetry.rs` + `src/backup.rs` + `src/cycle.rs`) | `time.cycle_finished_utc` (`last_heartbeat_utc`) — when the cycle **finished**, captured separately, only on a successful heartbeat | `backup.gate_day` (`last_backup_utc_day`, `last_backup_days.<file_key>`) — a **date**, not a timestamp: the once-per-day gate's key, evaluated in UTC. Reading it as "the time of the last backup" is the specific trap this collision calls out. |
+| `received_at` (the field name) | on a fleet-archive manifest (spec 004): `time.received_at` — the backend's own receipt timestamp, read back and persisted locally by `fleet_backup_pull.py`. v2 **itself** never submits or persists this field at all (it's assigned by the backend, after v2's own submission completes) — a common trap is assuming it means the same thing, or exists at all, on a v2-produced document; it doesn't. |
+| `content_sha256` (the field name) | `backup.content_hash` — a **backend-verified** hash: the backend recomputes it and rejects a mismatch, and it doubles as the backend's own dedupe key | on a powermeter record only (spec 004): `backup.local_content_hash` — a hash `fleet_backup_pull.py` computes **itself**, over its own stored bytes; the backend never sees or verifies it, because it issues no content hash for a telemetry record the way it does for a config backup. Same field name, one externally-verified, one purely local. |
+| `instrument_serial` (the field name) | `identity.instrument_serial` — **this repo's own** Luminosa/Solira instrument, running the v2 agent (heartbeat, upgrade-attempt, and mirrored into a fleet-archive manifest) | on a powermeter record only (spec 004): `identity.power_meter_serial` — the power-meter **device's** own serial (e.g. a Thorlabs PM100USB), a completely different physical device. This is the *same concept* as the sibling `pm100` app's own `instrument_serial` field (pm100 IS the power meter's own app) — but since this repo already has an unrelated concept literally named `identity.instrument_serial`, the reused meaning gets a different concept id here to avoid exactly this collision. |
+| `system_serial` (the field name) | `identity.system_serial` — the PicoQuant instrument a power measurement is *about* (spec 004; the powermeter manifest and its records) | the sibling `pm100` app's own `system_serial` field — the *same* concept, reused here under the same plain-English name since this repo had no prior concept to collide with it (contrast `instrument_serial` above, which did collide). |
+| `updated_utc` vs. `archived_utc` (spec 004 only) | `time.archive_updated_utc` — **folder-level**: when the most recent run that touched this whole manifest finished, one value per manifest | `time.archived_utc` — **entry-level**: when this specific artifact/record was written, one value per array item. Easy to conflate since both mean roughly "when the tool last ran", but they're recorded once per manifest vs. once per entry respectively. |
 | `reason` (blocked-file) vs. failure category | `telemetry.blocked_backup_reason` — 4 values (`locked`/`absent`/`too_large`/`rejected`), only ever about *this cycle's file outcomes* | `telemetry.last_failure_category` — the full 8-value `FailureCategory` enum, and specifically the most recent **backup-pass** failure, never the heartbeat's own delivery outcome (a heartbeat cannot report its own failure inside its own body) |
 | `file_key` (a field) vs. `files` (a map key) | `backup.file_key` as a *value* — the `file_key` part of a backup submission, or a `blocked_backups[].file_key` | the *same* concept as a **map key** — `state.json`'s `files` object is keyed by `file_key`, so the key itself (not a nested field) carries the meaning, documented at `field-mappings.json`'s `/files/*` pointer |
 

@@ -145,6 +145,53 @@ instrument folder exists, standalone `powermeter/1051032/` otherwise).
 
 ---
 
+## Phase 6: Structural schema + data-dictionary registration for the manifest documents (added 2026-09-12)
+
+**Goal**: `manifest.json` and `_powermeter/manifest.json` get a real JSON Schema, then join
+the repo-wide semantic data dictionary (`docs/data-dictionary/`, constitution Principle VII)
+— a structural schema has to exist before a semantic layer can describe its fields.
+
+- [X] T055 [P] Create `contracts/manifest.schema.json`: `Manifest` + `ManifestEntry`,
+  cross-checked against `tools/fleet_backup_pull.py`'s dataclasses and `save_manifest`'s
+  exact `json.dumps` body, not just `data-model.md`'s prose table. Validated (ad hoc, via the
+  `jsonschema` package already present in this environment — not added as a project
+  dependency) against a realistic serialized `Manifest` built from the actual dataclasses,
+  including an `id: null` rebuilt-entry case; three negative cases confirmed rejected (an
+  unexpected top-level field, an invalid `product` value, a non-hex `content_sha256`).
+- [X] T056 [P] Create `contracts/power-manifest.schema.json`: `PowerManifest` +
+  `PowerRecordEntry`, same cross-check + validation approach as T055, including the `kind:
+  "powermeter"` guard field and an `id: null` rebuilt-record case.
+
+- [X] T057 Add `$ref` resolution (local `#/$defs/<name>` only) to
+  `tools/check_data_dictionary.py::_leaf_pointers` — it previously treated `$ref` as an
+  opaque leaf (the whole array), which would have silently under-counted both new schemas'
+  array items instead of descending into `manifestEntry`/`powerRecordEntry`'s own fields.
+  Threaded a `root` parameter through the recursion so a ref resolves against the top-level
+  schema regardless of nesting depth. 3 new tests (`$ref` resolves correctly; an unsupported
+  non-local `$ref` raises rather than silently mis-walking).
+- [X] T058 Register both documents in `docs/data-dictionary/`: `v2.fleet_archive_manifest.v1`
+  (17 pointers) and `v2.fleet_archive_power_manifest.v1` (15 pointers) added to
+  `DOCUMENT_SOURCES` and `field-mappings.json`. 15 new concepts in `semantic-model.json`;
+  reused 6 existing ones (`identity.instrument_serial`, `identity.machine_id`, `doc.product`,
+  `doc.schema_version` — generalized, no longer state.json-specific — `doc.agent_version`,
+  `telemetry.measurement_type` — added `"combiner_power"` example). Two genuine same-repo
+  collisions caught while mapping fields, not just guessed at: (1) a powermeter record's own
+  `instrument_serial` field means the power-meter *device*'s serial — the same concept as the
+  sibling `pm100` app's own `instrument_serial`, but colliding with this repo's *existing*
+  `identity.instrument_serial` (the Luminosa/Solira instrument), so it got its own concept id
+  (`identity.power_meter_serial`) to keep the two apart; (2) `content_sha256` means a
+  backend-verified hash on a config backup (`backup.content_hash`) vs. a hash
+  `fleet_backup_pull.py` computes and trusts itself, with no backend counterpart, on a
+  powermeter record (`backup.local_content_hash`). Also corrected an earlier claim in
+  `docs/data-dictionary/README.md` that `received_at` "is deliberately not a concept" —
+  that was only ever true for *v2's own* documents (spec 001/002); spec 004 does persist it
+  locally, so it now has a real concept (`time.received_at`).
+
+**Checkpoint**: `python3 tools/check_data_dictionary.py` → `87 fields across 6 documents, all
+mapped.`; `python3 -m unittest discover -s tools -p 'test_*.py'` → 49 tests, all green.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase order

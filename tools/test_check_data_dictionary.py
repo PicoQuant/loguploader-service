@@ -169,6 +169,39 @@ class TestLeafPointerWalk(Base):
         pointers = sorted(cdd._leaf_pointers(schema, ""))
         self.assertEqual(pointers, ["/files/*/sha", "/items_list/*/k", "/nullable"])
 
+    def test_ref_to_defs_resolves(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "artifacts": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+            },
+            "$defs": {
+                "entry": {
+                    "type": "object",
+                    "properties": {"id": {"type": ["string", "null"]}, "sha": {"type": "string"}},
+                }
+            },
+        }
+        pointers = sorted(cdd._leaf_pointers(schema, ""))
+        self.assertEqual(pointers, ["/artifacts/*/id", "/artifacts/*/sha"])
+
+    def test_unsupported_ref_raises(self):
+        with self.assertRaises(ValueError):
+            list(cdd._leaf_pointers({"$ref": "other-file.json#/foo"}, ""))
+
+
+class TestFleetArchiveDocuments(Base):
+    """The two spec-004 archive documents registered into the real dictionary."""
+
+    def test_manifest_and_power_manifest_covered(self):
+        code, out, _ = self.run_main()
+        self.assertEqual(code, 0)
+        required = cdd.required_pointers()
+        self.assertIn("v2.fleet_archive_manifest.v1", required)
+        self.assertIn("v2.fleet_archive_power_manifest.v1", required)
+        self.assertEqual(len(required["v2.fleet_archive_manifest.v1"]), 17)
+        self.assertEqual(len(required["v2.fleet_archive_power_manifest.v1"]), 15)
+
 
 if __name__ == "__main__":
     unittest.main()
