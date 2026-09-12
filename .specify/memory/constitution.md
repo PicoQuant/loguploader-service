@@ -1,6 +1,48 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.3.0 → 1.4.0
+Rationale: Add a new core principle requiring a semantic data dictionary for every feature
+that produces output data (an API response, a wire submission, or a persisted file/document),
+alongside its structural schema. A structural schema (JSON Schema or equivalent) says shape;
+the dictionary says meaning — a field's meaning is not reliably derivable from its name or
+type and gets rediscovered (or silently misread) by every future reader without it. Pattern
+already implemented for v2's heartbeat/backup/local-state documents in
+specs/002-v2-config-backup-telemetry/contracts/data-dictionary/ (semantic-model.json +
+field-mappings.json + README.md), enforced by tools/check_data_dictionary.py, itself modeled
+on the sibling pm100 app's docs/data-dictionary/. MINOR bump: new principle added, nothing
+removed or redefined.
+
+Modified principles: none (I–VI unchanged)
+
+Added principles:
+  VII. Semantic Output Schema
+
+Modified sections:
+  Development Workflow — added a review-gate bullet: a change to an external-facing
+    document's fields MUST update its semantic data dictionary in the same change
+
+Added sections: none
+Removed sections: none
+
+Templates / files requiring updates:
+  ✅ .specify/memory/constitution.md (this file)
+  ✅ specs/002-v2-config-backup-telemetry/{spec,plan,research,data-model,tasks}.md +
+     contracts/data-dictionary/ + tools/check_data_dictionary.py — the concrete
+     implementation this principle generalizes from (already done, precedes this amendment)
+  ⚠ specs/001-v2-remote-upgrade, specs/003-backend-api-support, specs/004-fleet-backup-restore
+    — each defines output documents (upgrade-telemetry payload, backend API responses, the
+    fleet-backup archive's manifest/JSON files) not yet covered by a semantic dictionary;
+    bringing them into compliance is future work, not required retroactively by this
+    amendment alone (see Governance: amendments are not automatically retroactive without a
+    separate compliance pass)
+
+Deferred TODOs:
+  - Decide whether existing specs 001/003/004 need their own data-dictionary follow-up work,
+    and if so, track it as a task under each spec rather than in this constitution.
+
+Prior report (1.2.0 → 1.3.0)
+----------------------------
 Version change: 1.2.0 → 1.3.0
 Rationale: Add a staged-rollout mandate to the Build, Release & Distribution section: a v2
 release reaches the full fleet only after a beta period on a limited cohort, with an explicit
@@ -212,6 +254,32 @@ network access. If we cannot push a fix remotely, we cannot fix anything at all.
 v2 that is better in every other way but cannot replace the installed v1 has failed
 its single most important requirement.
 
+### VII. Semantic Output Schema
+
+Every feature that produces output data — an API response, a wire submission, or a
+persisted file/document — MUST ship a semantic data dictionary alongside its
+structural schema. The dictionary MUST define, for every field: a dot-namespaced
+semantic concept id independent of the field's own name, its datatype, unit where
+applicable, a description of what it *means* (not what shape it has), known
+aliases, its parent concept where nested, at least one real example, and a
+confidence marker (`confirmed` / `uncertain`) — `uncertain` unless checked against
+a live contract or working code rather than inferred from a name or type alone.
+The dictionary MUST also map every field of every covered document to a concept id,
+so a maintainer can resolve any field back to its meaning without re-deriving it
+from source. A structural schema (JSON Schema or equivalent) states *shape*; this
+dictionary states *meaning*; neither substitutes for the other, and a schema or
+data-model change that adds, renames, or reinterprets a field without a matching
+dictionary update is an incomplete change, not a follow-up.
+
+Rationale: a field's meaning — "this is a gate key, not a timestamp"; "these two
+same-named fields across two documents are not the same concept" — is not
+reliably derivable from its name or type, and gets silently rediscovered, or
+silently misread, by every future reader without it being written down once,
+deliberately, in one place. Implemented for v2's heartbeat, backup submission, and
+local state in `specs/002-v2-config-backup-telemetry/contracts/data-dictionary/`
+(`semantic-model.json` + `field-mappings.json` + `README.md`), enforced by
+`tools/check_data_dictionary.py` — the template this principle generalizes from.
+
 ## Build, Release & Distribution
 
 - Windows builds are produced by `.github/workflows/windows-build.yml`; releases by
@@ -263,6 +331,10 @@ its single most important requirement.
 - Release commits follow the existing convention (`chore(release): X.Y.Z`) and are
   produced by the release helper, not by hand.
 - User-facing behavior changes MUST be reflected in `README.MD`.
+- A change that adds, renames, or reinterprets a field of an external-facing
+  document (an API response, a wire submission, or a persisted file) MUST update
+  that document's semantic data dictionary in the same change (Principle VII), and
+  MUST pass its coverage check (e.g. `tools/check_data_dictionary.py`) before merge.
 
 ## Governance
 
@@ -284,4 +356,4 @@ Unavoidable complexity or a principle deviation MUST be called out and justified
 the PR; unjustified violations block merge. This file is the runtime development
 guidance source for the project.
 
-**Version**: 1.3.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.4.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-12
