@@ -100,6 +100,11 @@ staged-rollout mandate). Result: **PASS.**
 **Gate outcome**: **PASS** — proceed. `/speckit-tasks` is unblocked (constitution amended to
 v1.3.0).
 
+**Note (2026-09-12, /speckit-analyze I1)**: the constitution was further amended to **v1.4.0**
+after this gate ran, adding **Principle VII (Semantic Output Schema)**. That principle is not
+re-evaluated in the table above since it postdates it; its assessment against this plan is in
+the Post-Design Constitution Re-check below, added alongside Phase 10 (T052–T058).
+
 ### Post-Design Constitution Re-check (after Phase 1)
 
 No violations. Confirmations:
@@ -120,6 +125,10 @@ No violations. Confirmations:
 - **VI** — `state.json` under `%ProgramData%` (not the install dir); CLI `install/uninstall`
   matches v1's verbs; per-product **and per-channel** artifacts; channel in every heartbeat
   for the promotion gate.
+- **VII** (added to the constitution 2026-09-12, after this plan's initial gate — **PASS**) —
+  `contracts/data-dictionary/{semantic-model.json,field-mappings.json,README.md}` is exactly
+  the semantic dictionary the principle requires, covering all three documents v2 submits or
+  persists; coverage enforced in CI by `tools/check_data_dictionary.py` (SC-013, Phase 10).
 
 ## Project Structure
 

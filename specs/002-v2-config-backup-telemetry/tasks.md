@@ -6,8 +6,9 @@ description: "Task list for V2 — Config Backup & Device Telemetry"
 
 **Input**: Design documents from `specs/002-v2-config-backup-telemetry/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
-**Constitution**: v1.3.0 — gate passes (Principle V allows a compiled binary; Build section
-adds the staged-rollout / beta-channel mandate).
+**Constitution**: v1.4.0 — gate passes (Principle V allows a compiled binary; Build section
+adds the staged-rollout / beta-channel mandate; Principle VII, added 2026-09-12, requires the
+semantic data dictionary Phase 10 below implements).
 
 **Tests**: INCLUDED. `plan.md` (Testing) and `research.md` (D13) specify a concrete
 unit + integration test approach with named files, and every user story has an
