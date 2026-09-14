@@ -59,6 +59,12 @@ Source: "..\..\updater\update.ps1";  DestDir: "{app}\updater"; Flags: ignorevers
 Name: "{group}\{#MyDisplayName}"; Filename: "{app}\{#MyExeName}"
 
 [Run]
+#ifdef MyLegacyServiceName
+; retire the fielded v1 service before the v2 one starts (spec 001 D1/D2) — a no-op
+; (sc.exe exits non-zero, ignored by Inno) if it's already gone or never existed.
+Filename: "{sys}\sc.exe"; Parameters: "stop {#MyLegacyServiceName}"; Flags: runhidden
+Filename: "{sys}\sc.exe"; Parameters: "delete {#MyLegacyServiceName}"; Flags: runhidden
+#endif
 Filename: "{app}\{#MyExeName}"; Parameters: "install"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "start {#MyServiceName}"; Flags: runhidden; StatusMsg: "Starting service..."
 
